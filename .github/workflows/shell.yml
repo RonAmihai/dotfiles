@@ -86,8 +86,9 @@ jobs:
             apply --exclude externals --no-tty --force
           grep -F 'git-credential-manager.exe' "$wsl_home/.gitconfig"
           rendered_config=$("$HOME/.local/bin/chezmoi" --config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" \
-            execute-template --init --promptString work_dotfiles_repo= --promptString dotfiles_layers= --file .chezmoi.toml.tmpl)
+            execute-template --init --file .chezmoi.toml.tmpl)
           case $rendered_config in *"sourceDir = \"$GITHUB_WORKSPACE\""*) ;; *) exit 1 ;; esac
+          case $rendered_config in *'work_dotfiles_repo = ""'*'dotfiles_layers = ""'*) ;; *) exit 1 ;; esac
       - name: Add the starter work layer, then check that a second apply of both layers changes nothing
         run: |
           personal=(--config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" --destination "$RENDERED_HOME" --exclude externals)

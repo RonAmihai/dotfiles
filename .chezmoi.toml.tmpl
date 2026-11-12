@@ -2,8 +2,8 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
 
 [data]
     name = "Ron Amihai"
-    work_dotfiles_repo = {{ promptStringOnce . "work_dotfiles_repo" "Work dotfiles repo URL for a second chezmoi (empty for none)" | quote }}
-    dotfiles_layers = {{ promptStringOnce . "dotfiles_layers" "More dotfiles layers as name=URL pairs separated by spaces (empty for none)" | quote }}
+    work_dotfiles_repo = {{ promptStringOnce . "work_dotfiles_repo" "Work dotfiles repo URL for a second chezmoi (empty for none)" "" | quote }}
+    dotfiles_layers = {{ promptStringOnce . "dotfiles_layers" "More dotfiles layers as name=URL pairs separated by spaces (empty for none)" "" | quote }}
 
 [diff]
     exclude = ["scripts"]

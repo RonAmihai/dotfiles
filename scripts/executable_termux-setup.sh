@@ -51,7 +51,7 @@ export PATH="$HOME/.local/bin:$HOME/scripts:$PATH"
 
 if [ ! -d "$HOME/.local/share/chezmoi" ]; then
     echo "  Applying dotfiles..."
-    chezmoi init RonAmihai --apply --promptString work_dotfiles_repo= --promptString dotfiles_layers=
+    chezmoi init RonAmihai --apply --promptDefaults
 else
     echo "  Updating dotfiles..."
     chezmoi update --apply

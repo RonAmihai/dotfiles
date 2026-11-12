@@ -50,10 +50,12 @@ An agent can follow these steps on a new machine. The user gives the agent the l
 1. Ask the user for the layers. A machine can have none.
 2. Install chezmoi and `gh` with the command for the system (table above). Then the user runs `gh auth login` and `gh auth setup-git`.
 3. If a layer lives on another git host, the user also logs in to that host, for example with `glab auth login`. The agent never handles a password or a token.
-4. Apply this repo with the layers. Put all pairs in one string, with a space between two pairs:
+4. Write the layers into the chezmoi configuration file, then apply this repo. If `~/.config/chezmoi/chezmoi.toml` already exists, stop and ask the user. Put all pairs in one string, with a space between two pairs. With no layers, use an empty string:
 
 ```bash
-chezmoi init --apply RonAmihai --promptString work_dotfiles_repo= --promptString dotfiles_layers='<name>=<repo URL> <name>=<repo URL>'
+mkdir -p ~/.config/chezmoi
+printf '[data]\n    work_dotfiles_repo = ""\n    dotfiles_layers = "%s"\n' '<name>=<repo URL> <name>=<repo URL>' > ~/.config/chezmoi/chezmoi.toml
+chezmoi init --apply RonAmihai
 ```
 
 5. After the first apply, a script clones each layer into `~/.local/share/chezmoi-<name>` and applies it. Run `chezmoi apply` once more, so that the templates here read the data that the layers added.
