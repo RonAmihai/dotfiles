@@ -14,9 +14,11 @@ mkdir "$tmp/base-src"
 git -C "$repo" archive "$base_ref" | tar -x -C "$tmp/base-src"
 
 render() {
-    mkdir "$tmp/$2"
-    "$chezmoi" --config "$config" --source "$1" --destination "$tmp/$2" --persistent-state "$tmp/$2.boltdb" \
+    # Both trees render into the same folder, because some files hold the destination path
+    mkdir "$tmp/home"
+    "$chezmoi" --config "$config" --source "$1" --destination "$tmp/home" --persistent-state "$tmp/$2.boltdb" \
         apply --exclude externals,scripts --no-tty --force
+    mv "$tmp/home" "$tmp/$2"
 }
 render "$tmp/base-src" base
 render "$repo" head
