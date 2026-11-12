@@ -1,7 +1,6 @@
 case ${DOTFILES_PHASE:-} in
 aliases)
     alias opc='opencode'
-    alias opcc='opencode --continue'
     # Picks a session of this project to resume; without fzf and jq it continues the last one
     opr() {
         if ! command -v fzf >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then

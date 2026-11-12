@@ -1,6 +1,7 @@
 case ${DOTFILES_PHASE:-} in
 aliases)
     command -v agy-reload >/dev/null 2>&1 && alias agy='agy-reload'
+    command -v agy >/dev/null 2>&1 && alias agr='agy --continue'
     return 0 ;;
 esac
 [ -n "${ZSH_VERSION:-}" ] || return 0
