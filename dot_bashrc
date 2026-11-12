@@ -1,0 +1,55 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║                              Bash Configuration                           ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+# Works with bash 3.2 (macOS) and later. Shares env, aliases and tool files with zsh.
+
+case $- in *i*) ;; *) return ;; esac
+# Debian's ~/.profile also sources this file, and ~/.bash_profile sources both
+[ -n "${_BASHRC_LOADED:-}" ] && return
+_BASHRC_LOADED=1
+
+[ -r ~/.config/shell/env.sh ] && . ~/.config/shell/env.sh
+[ -r ~/.config/shell/aliases.sh ] && . ~/.config/shell/aliases.sh
+
+# History
+HISTFILE=${DOTFILES_HOME:-$HOME}/.bash_history
+HISTSIZE=50000
+HISTFILESIZE=50000
+HISTCONTROL=ignoreboth:erasedups
+HISTTIMEFORMAT='%F %T '
+shopt -s histappend checkwinsize
+PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+
+# Caches a tool's init script until the tool's binary is newer than the cache (the tool files use it)
+_bashrc_cached_init() {
+    local bin cache="${DOTFILES_HOME:-$HOME}/.cache/bash/$1.bash"
+    shift
+    bin=$(command -v "$1") || return 1
+    if [ ! -s "$cache" ] || [ "$bin" -nt "$cache" ]; then
+        mkdir -p "${cache%/*}" && "$@" > "$cache" 2>/dev/null || { rm -f "$cache"; return 1; }
+    fi
+    . "$cache"
+}
+
+# oh-my-posh and bash-completion need bash 4.2 or later; macOS ships bash 3.2, which keeps its default prompt
+_bashrc_4_2() {
+    [ "${BASH_VERSINFO[0]}" -ge 5 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }
+}
+
+# One file per tool in ~/.config/shell/tools; env.sh loaded them and ran their path and env phases
+_dotfiles_tools setup
+_dotfiles_tools late
+
+if [ -z "${AGENT_SHELL:-}" ] && _bashrc_4_2; then
+    for _bashrc_completion in "${HOMEBREW_PREFIX:-/nonexistent}/etc/profile.d/bash_completion.sh" /usr/share/bash-completion/bash_completion; do
+        [ -r "$_bashrc_completion" ] && { . "$_bashrc_completion"; break; }
+    done
+    unset _bashrc_completion
+fi
+
+# Machine-local overrides (work config, etc.) — not managed by chezmoi
+[ -r ~/.local.bash ] && . ~/.local.bash
+
+# Last, because bash expands aliases into the body of every function defined after them
+_dotfiles_tools aliases
+unset DOTFILES_PHASE

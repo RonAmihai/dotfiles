@@ -1,0 +1,283 @@
+name: shell
+
+# A push runs this only on main, because a branch with a pull request already runs it for the pull request
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.chezmoi**'
+      - 'dot_**'
+      - 'private_dot_**'
+      - 'empty_dot_*'
+      - 'symlink_*'
+      - 'AppData/**'
+      - 'sbx-kits/**'
+      - 'scripts/**'
+      - 'tools/**'
+      - '.githooks/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.chezmoi**'
+      - 'dot_**'
+      - 'private_dot_**'
+      - 'empty_dot_*'
+      - 'symlink_*'
+      - 'AppData/**'
+      - 'sbx-kits/**'
+      - 'scripts/**'
+      - 'tools/**'
+      - '.githooks/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run of the older one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  OMP_RELEASE: https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v31.9.1
+
+jobs:
+  unix:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+      - name: Install chezmoi
+        run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+      - name: Render the dotfiles with chezmoi into an empty HOME
+        run: |
+          home=$(mktemp -d) && echo "RENDERED_HOME=$home" >> "$GITHUB_ENV"
+          printf '[data]\n    name = "CI"\n' > "$RUNNER_TEMP/chezmoi.toml"
+          "$HOME/.local/bin/chezmoi" --config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" \
+            --destination "$home" apply --exclude externals --no-tty --force
+      - name: The work command on the rendered HOME, before the starter work layer joins it
+        run: CHEZMOI="$HOME/.local/bin/chezmoi" bash tools/ci/check-work-profile.sh "$RENDERED_HOME"
+      - name: Keep cmux as the macOS terminal hotkey owner
+        if: runner.os == 'macOS'
+        run: |
+          jq -e '.shortcuts.bindings.showHideAllWindows == "ctrl+cmd+enter"' "$RENDERED_HOME/.config/cmux/cmux.json"
+          awk '/^\[global_hotkey.toggle_all_windows\]$/{found=1; next} /^\[/{found=0} found && /^enabled = false$/{ok=1} END{exit !ok}' "$RENDERED_HOME/.warp/settings.toml"
+      - name: Simulate WSL with the shared source and Windows Git credentials
+        if: runner.os == 'Linux'
+        run: |
+          fake_git="$RUNNER_TEMP/WindowsGit"
+          wsl_home=$(mktemp -d)
+          mkdir -p "$fake_git/cmd" "$fake_git/mingw64/bin"
+          touch "$fake_git/cmd/git.exe" "$fake_git/mingw64/bin/git-credential-manager.exe"
+          chmod +x "$fake_git/cmd/git.exe" "$fake_git/mingw64/bin/git-credential-manager.exe"
+          WSL_DISTRO_NAME=Ubuntu PATH="$fake_git/cmd:$PATH" "$HOME/.local/bin/chezmoi" \
+            --config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" --destination "$wsl_home" \
+            apply --exclude externals --no-tty --force
+          grep -F 'git-credential-manager.exe' "$wsl_home/.gitconfig"
+          rendered_config=$("$HOME/.local/bin/chezmoi" --config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" \
+            execute-template --init --promptString work_dotfiles_repo= --promptString dotfiles_layers= --file .chezmoi.toml.tmpl)
+          case $rendered_config in *"sourceDir = \"$GITHUB_WORKSPACE\""*) ;; *) exit 1 ;; esac
+      - name: Add the starter work layer, then check that a second apply of both layers changes nothing
+        run: |
+          personal=(--config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" --destination "$RENDERED_HOME" --exclude externals)
+          work=(--config "$RUNNER_TEMP/work/chezmoi.toml" --source "$GITHUB_WORKSPACE/tools/work-layer-skeleton" --destination "$RENDERED_HOME")
+          "$HOME/.local/bin/chezmoi" "${work[@]}" apply --no-tty --force
+          "$HOME/.local/bin/chezmoi" "${personal[@]}" apply --no-tty --force
+          left="$("$HOME/.local/bin/chezmoi" "${personal[@]}" status)$("$HOME/.local/bin/chezmoi" "${work[@]}" status)"
+          [ -z "$left" ] || { echo "A second apply would still change:"; echo "$left"; exit 1; }
+      - name: Parse every rendered JSON and TOML file
+        run: bash tools/ci/check-rendered-files.sh "$RENDERED_HOME"
+      - name: Render the modify templates and the Windows install scripts with sample input
+        run: bash tools/ci/check-templates.sh "$HOME/.local/bin/chezmoi" "$RUNNER_TEMP/chezmoi.toml"
+      - name: Run the JetBrains scripts and agent templates on fake IDE folders
+        run: bash tools/ci/check-jetbrains.sh "$HOME/.local/bin/chezmoi" "$RUNNER_TEMP/chezmoi.toml"
+      - name: Run the status line with sample Claude Code and agy input
+        run: bash tools/ci/check-statusline.sh
+      - name: Shellcheck the standalone scripts
+        if: runner.os == 'Linux'
+        run: bash tools/ci/check-scripts.sh
+      - name: Lint the GitHub workflows
+        if: runner.os == 'Linux'
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -no-color
+      - name: Install the prompt font with the chezmoi script (Linux branch; real applies skip it in CI)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq fontconfig >/dev/null
+          env -u CI "$HOME/.local/bin/chezmoi" --config "$RUNNER_TEMP/chezmoi.toml" --source "$GITHUB_WORKSPACE" \
+            execute-template < .chezmoiscripts/run_onchange_after_install-font.sh.tmpl > "$RUNNER_TEMP/install-font.sh"
+          sh "$RUNNER_TEMP/install-font.sh"
+          fc-list | grep -q 'JetBrainsMono Nerd Font Mono'
+          [ -z "$(sh "$RUNNER_TEMP/install-font.sh")" ]
+      - name: Install oh-my-posh into the rendered HOME
+        run: |
+          asset=posh-linux-amd64
+          [ "$RUNNER_OS" = macOS ] && asset=posh-darwin-arm64
+          curl -fsSL -o "$RENDERED_HOME/.local/bin/oh-my-posh" "$OMP_RELEASE/$asset"
+          chmod +x "$RENDERED_HOME/.local/bin/oh-my-posh"
+      - name: Shell check on the rendered HOME (zsh and bash)
+        run: bash tools/shell-check/fresh-home-check.sh --home "$RENDERED_HOME"
+      - name: update-all dry run
+        run: XDG_CONFIG_HOME="$RENDERED_HOME/.config" zsh "$RENDERED_HOME/.local/bin/update-all" --dry-run
+      - name: update-all updates each Claude plugin once
+        run: bash tools/ci/check-termux.sh "$RENDERED_HOME" plugins_once
+      - name: Compare the render with the pull request's base, apart from the allowed files
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch -q --depth 1 origin "$BASE_SHA"
+          bash tools/ci/render-diff.sh "$HOME/.local/bin/chezmoi" "$RUNNER_TEMP/chezmoi.toml" "$BASE_SHA" tools/ci/render-diff-allowed.txt
+
+  linux-distros:
+    name: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['debian:12', 'fedora:latest', 'archlinux:latest', 'opensuse/tumbleweed:latest', 'alpine:latest']
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 6
+    steps:
+      - name: Install git, bash, zsh and curl
+        shell: sh
+        run: |
+          if command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq git zsh diffutils curl ca-certificates >/dev/null
+          elif command -v dnf >/dev/null; then dnf install -y -q git zsh diffutils findutils curl >/dev/null
+          elif command -v pacman >/dev/null; then pacman -Syu --noconfirm --needed git zsh diffutils curl >/dev/null
+          elif command -v zypper >/dev/null; then zypper --non-interactive install git zsh diffutils curl >/dev/null
+          elif command -v apk >/dev/null; then apk add --quiet git bash zsh coreutils diffutils curl
+          fi
+      - name: Install oh-my-posh
+        shell: sh
+        run: |
+          mkdir -p /usr/local/bin
+          curl -fsSL -o /usr/local/bin/oh-my-posh "$OMP_RELEASE/posh-linux-amd64"
+          chmod +x /usr/local/bin/oh-my-posh
+      # actions/checkout cannot run in Alpine (musl), so every distro clones the same way
+      - name: Check out the pushed commit
+        shell: sh
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q repo
+          git -C repo fetch -q --depth 1 "https://x-access-token:$TOKEN@github.com/$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          git -C repo checkout -q FETCH_HEAD
+      - name: Shell check (zsh and bash)
+        shell: sh
+        run: bash repo/tools/shell-check/fresh-home-check.sh
+      - name: update-all dry run
+        shell: sh
+        run: |
+          tmp=$(mktemp -d)
+          mkdir -p "$tmp/shell"
+          cp -R repo/dot_config/shell/tools "$tmp/shell/tools"
+          XDG_CONFIG_HOME="$tmp" zsh repo/dot_local/bin/executable_update-all --dry-run
+
+  msys2:
+    name: windows-latest (MSYS2)
+    runs-on: windows-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        with:
+          msystem: MSYS
+          update: false
+          install: zsh curl
+      - name: Install oh-my-posh
+        run: |
+          mkdir -p /usr/local/bin
+          curl -fsSL -o /usr/local/bin/oh-my-posh.exe "$OMP_RELEASE/posh-windows-amd64.exe"
+      - name: Shell check (zsh and bash)
+        run: bash tools/shell-check/fresh-home-check.sh
+      - name: update-all dry run
+        run: |
+          tmp=$(mktemp -d)
+          mkdir -p "$tmp/shell"
+          cp -R dot_config/shell/tools "$tmp/shell/tools"
+          XDG_CONFIG_HOME="$tmp" zsh dot_local/bin/executable_update-all --dry-run
+
+  git-bash:
+    name: windows-latest (Git Bash, native chezmoi)
+    runs-on: windows-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install chezmoi
+        shell: pwsh
+        run: iex "&{$(irm 'https://get.chezmoi.io/ps1')} -b '$env:USERPROFILE\bin'"
+      - name: Render the dotfiles with Windows chezmoi into an empty HOME
+        run: |
+          home=$(mktemp -d) && echo "RENDERED_HOME=$home" >> "$GITHUB_ENV"
+          config="$(cygpath "$RUNNER_TEMP")/chezmoi.toml"
+          printf '[data]\n    name = "CI"\n' > "$config"
+          "$(cygpath "$USERPROFILE")/bin/chezmoi.exe" --config "$config" --source "$GITHUB_WORKSPACE" \
+            --destination "$home" apply --exclude externals --no-tty --force
+      - name: Add the starter work layer, then check that a second apply of both layers changes nothing
+        run: |
+          cm="$(cygpath "$USERPROFILE")/bin/chezmoi.exe"
+          personal=(--config "$(cygpath "$RUNNER_TEMP")/chezmoi.toml" --source "$GITHUB_WORKSPACE" --destination "$RENDERED_HOME" --exclude externals)
+          work=(--config "$(cygpath "$RUNNER_TEMP")/work/chezmoi.toml" --source "$GITHUB_WORKSPACE/tools/work-layer-skeleton" --destination "$RENDERED_HOME")
+          "$cm" "${work[@]}" apply --no-tty --force
+          "$cm" "${personal[@]}" apply --no-tty --force
+          left="$("$cm" "${personal[@]}" status)$("$cm" "${work[@]}" status)"
+          [ -z "$left" ] || { echo "A second apply would still change:"; echo "$left"; exit 1; }
+      - name: Install oh-my-posh into the rendered HOME
+        run: curl -fsSL -o "$RENDERED_HOME/.local/bin/oh-my-posh.exe" "$OMP_RELEASE/posh-windows-amd64.exe"
+      - name: Shell check on the rendered HOME (bash only, Git Bash has no zsh)
+        run: bash tools/shell-check/fresh-home-check.sh --home "$RENDERED_HOME"
+      - name: update-all and clean-all pass their flags to PowerShell
+        run: bash tools/ci/check-git-bash-wrapper.sh
+      - name: Compare the render with the pull request's base, apart from the allowed files
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch -q --depth 1 origin "$BASE_SHA"
+          bash tools/ci/render-diff.sh "$(cygpath "$USERPROFILE")/bin/chezmoi.exe" "$(cygpath "$RUNNER_TEMP")/chezmoi.toml" "$BASE_SHA" tools/ci/render-diff-allowed.txt
+
+  termux:
+    name: termux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # A job-level container would run the runner's glibc Node inside the bionic image, so this uses plain docker run
+      # fresh-home-check.sh starts shells with /bin on PATH, which Android has and the image lacks, so root fills /bin first
+      - name: Render the dotfiles in Termux and run the Termux checks
+        run: |
+          docker run --rm --entrypoint /system/bin/sh -v "$PWD:/src:ro" "termux/termux-docker:${{ matrix.arch }}" -c \
+            'mkdir /bin && for f in /system/bin/*; do ln -s "$f" /bin/; done && ln -s "$PREFIX/bin/awk" /bin/awk &&
+             exec /entrypoint.sh bash /src/tools/ci/termux-ci.sh'
+

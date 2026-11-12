@@ -1,0 +1,5 @@
+# App icons stay on this machine, because they are third-party artwork
+*.icns
+*.png
+!icons-folder.icns
+!project-folder.icns

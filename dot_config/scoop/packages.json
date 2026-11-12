@@ -1,0 +1,41 @@
+{
+  "config": {},
+  "buckets": [
+    { "Name": "main", "Source": "https://github.com/ScoopInstaller/Main" },
+    { "Name": "extras", "Source": "https://github.com/ScoopInstaller/Extras" }
+  ],
+  "apps": [
+    { "Name": "7zip", "Source": "main", "Info": "" },
+    { "Name": "bat", "Source": "main", "Info": "" },
+    { "Name": "chezmoi", "Source": "main", "Info": "" },
+    { "Name": "cmake", "Source": "main", "Info": "" },
+    { "Name": "codex", "Source": "main", "Info": "" },
+    { "Name": "delta", "Source": "main", "Info": "" },
+    { "Name": "duf", "Source": "main", "Info": "" },
+    { "Name": "dust", "Source": "main", "Info": "" },
+    { "Name": "eza", "Source": "main", "Info": "" },
+    { "Name": "fastfetch", "Source": "main", "Info": "" },
+    { "Name": "fd", "Source": "main", "Info": "" },
+    { "Name": "fzf", "Source": "main", "Info": "" },
+    { "Name": "gh", "Source": "main", "Info": "" },
+    { "Name": "glab", "Source": "main", "Info": "" },
+    { "Name": "gradle", "Source": "main", "Info": "" },
+    { "Name": "helm", "Source": "main", "Info": "" },
+    { "Name": "jq", "Source": "main", "Info": "" },
+    { "Name": "kompose", "Source": "main", "Info": "" },
+    { "Name": "kubectl", "Source": "main", "Info": "" },
+    { "Name": "lazygit", "Source": "extras", "Info": "" },
+    { "Name": "minikube", "Source": "main", "Info": "" },
+    { "Name": "neovim", "Source": "main", "Info": "" },
+    { "Name": "oh-my-posh", "Source": "main", "Info": "" },
+    { "Name": "ripgrep", "Source": "main", "Info": "" },
+    { "Name": "scoop-completion", "Source": "extras", "Info": "" },
+    { "Name": "scoop-search", "Source": "main", "Info": "" },
+    { "Name": "sd", "Source": "main", "Info": "" },
+    { "Name": "shfmt", "Source": "main", "Info": "" },
+    { "Name": "terraform", "Source": "main", "Info": "" },
+    { "Name": "tlrc", "Source": "main", "Info": "" },
+    { "Name": "winfetch", "Source": "main", "Info": "" },
+    { "Name": "zoxide", "Source": "main", "Info": "" }
+  ]
+}

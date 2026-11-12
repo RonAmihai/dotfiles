@@ -1,0 +1,80 @@
+schemaVersion: "1"
+kind: mixin
+name: claude-host-config
+displayName: Host Claude Config
+description: Bind host ~/.claude into the sandbox and forward the IDE port so --ide works.
+extends: claude
+
+commands:
+  install:
+    - command: |
+        set -eu
+
+        # Derive host home from the mounted workspace path.
+        # WORKSPACE_DIR is set by sbx, e.g. /Users/alice/Projects/foo or /home/alice/...
+        HOST_HOME=$(printf '%s' "${WORKSPACE_DIR:-}" | sed -E 's#^(/(Users|home)/[^/]+).*#\1#')
+
+        if [ -z "$HOST_HOME" ] || [ ! -d "$HOST_HOME/.claude" ]; then
+          echo "host .claude not visible — launch via 'sclaude' so \$HOME/.claude is mounted"
+          exit 0
+        fi
+
+        mkdir -p /home/agent/.claude
+
+        # Symlink config files that survive sbx's later initFiles overwrite:
+        # sbx writes through the symlink, the target is on the host ~/.claude:ro
+        # mount, write fails with EROFS, the symlink stays intact. Claude then
+        # reads host's content live (so CLAUDE.md / settings.json / keybindings
+        # edits on the host take effect the next time claude starts inside the
+        # sandbox — no need to recreate it).
+        for f in CLAUDE.md settings.json keybindings.json; do
+          src="$HOST_HOME/.claude/$f"
+          [ -e "$src" ] && ln -sfn "$src" "/home/agent/.claude/$f"
+        done
+
+        # settings.local.json is the one config file Claude Code rejects when
+        # it's a symlink (likely a safety check against config substitution).
+        # Write a real file containing host's local content (if any) plus
+        # sbx's bypass-permissions triplet — without that triplet the
+        # sandbox would prompt for every action, defeating the point of scco.
+        if [ -e "$HOST_HOME/.claude/settings.local.json" ]; then
+          jq '. + {defaultMode:"bypassPermissions",bypassPermissionsModeAccepted:true,skipDangerousModePermissionPrompt:true}' "$HOST_HOME/.claude/settings.local.json" > /home/agent/.claude/settings.local.json
+        else
+          printf '{"defaultMode":"bypassPermissions","bypassPermissionsModeAccepted":true,"skipDangerousModePermissionPrompt":true}\n' > /home/agent/.claude/settings.local.json
+        fi
+
+        # Symlink data directories: plugins/agents follow ~/.claude:ro mount,
+        # projects is writable via a separate rw mount, ide carries --ide lock
+        # files so the in-container claude can discover the host IDE.
+        for d in plugins projects agents ide; do
+          src="$HOST_HOME/.claude/$d"
+          [ -d "$src" ] || continue
+          rm -rf "/home/agent/.claude/$d"
+          ln -sfn "$src" "/home/agent/.claude/$d"
+        done
+      user: "1000"
+
+  # Per-run startup: background poller that keeps a socat relay running for
+  # every IDE lock file in ~/.claude/ide/. Lock filename = port (VS Code,
+  # Cursor, JetBrains all share this convention). Relay forwards container
+  # 127.0.0.1:<port> -> host.docker.internal:<port> so `claude --ide`
+  # (scco/sccr) reaches the IDE on the host. Picks up new IDE sessions
+  # automatically, idempotent via `ss -tln` check.
+  startup:
+    - command:
+        - sh
+        - -c
+        - |
+          (
+            while true; do
+              for lock in /home/agent/.claude/ide/*.lock; do
+                [ -f "$lock" ] || continue
+                port=$(basename "$lock" .lock)
+                case "$port" in ''|*[!0-9]*) continue ;; esac
+                ss -tln 2>/dev/null | grep -q "127.0.0.1:$port\b" && continue
+                socat TCP-LISTEN:$port,bind=127.0.0.1,fork,reuseaddr TCP:host.docker.internal:$port >/dev/null 2>&1 &
+              done
+              sleep 3
+            done
+          ) </dev/null >/dev/null 2>&1 &
+      user: "1000"

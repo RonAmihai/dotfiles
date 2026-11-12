@@ -1,0 +1,20 @@
+{{- /* The installed JetBrains IDEs as JSON, each with the cache and configuration folders of its newest version. An IDE counts once it has run */ -}}
+{{- $cacheRoot := joinPath (env "XDG_CACHE_HOME" | default (joinPath .chezmoi.homeDir ".cache")) "JetBrains" -}}
+{{- $configRoot := joinPath (env "XDG_CONFIG_HOME" | default (joinPath .chezmoi.homeDir ".config")) "JetBrains" -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{-   $cacheRoot = joinPath .chezmoi.homeDir "Library/Caches/JetBrains" -}}
+{{-   $configRoot = joinPath .chezmoi.homeDir "Library/Application Support/JetBrains" -}}
+{{- else if eq .chezmoi.os "windows" -}}
+{{-   $cacheRoot = joinPath (env "LOCALAPPDATA") "JetBrains" -}}
+{{-   $configRoot = joinPath (env "APPDATA") "JetBrains" -}}
+{{- end -}}
+{{- $installed := dict -}}
+{{- range $ide, $spec := .jetbrains_ides -}}
+{{-   $versions := glob (joinPath $cacheRoot (printf "%s[0-9]*" $spec.cache) "ai-agent-extensions") -}}
+{{-   if $versions -}}
+{{-     $cacheDir := osDir (last $versions) -}}
+{{-     $folders := dict "cacheDir" $cacheDir "configDir" (joinPath $configRoot (osBase $cacheDir)) -}}
+{{-     $_ := set $installed $ide (merge $folders $spec) -}}
+{{-   end -}}
+{{- end -}}
+{{- $installed | toJson -}}

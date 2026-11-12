@@ -1,0 +1,13 @@
+# Ask for a key's passphrase again after four idle hours, and at least every 12 hours
+default-cache-ttl 14400
+max-cache-ttl 43200
+{{- if eq .chezmoi.os "darwin" }}
+{{-   $pinentry := "" }}
+{{-   range list "/opt/homebrew/bin/pinentry-mac" "/usr/local/bin/pinentry-mac" }}
+{{-     if and (not $pinentry) (stat .) }}{{ $pinentry = . }}{{ end }}
+{{-   end }}
+{{-   with $pinentry }}
+# The macOS passphrase dialog, which can keep the passphrase in the keychain
+pinentry-program {{ . }}
+{{-   end }}
+{{- end }}

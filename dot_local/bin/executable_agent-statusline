@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""
+Status line for Claude Code, and for the Antigravity CLI with --agy — Python port
+of danielmackay/claude-code-statusline plus responsive degradation, sandbox
+indicator, color-coded thresholds, segment hiding when empty, ahead/behind
+upstream, line-count diffs, and two-line column alignment.
+"""
+
+import json
+import os
+import re
+import subprocess
+import shutil
+import sys
+import unicodedata
+from datetime import datetime
+
+GREEN, YELLOW, RED, RESET = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
+
+ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def width(s: str) -> int:
+    """Terminal display width, ignoring ANSI escapes."""
+    s = ANSI.sub("", s)
+    w = 0
+    for ch in s:
+        if ord(ch) < 0x20:
+            continue
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+
+def pad(seg: str, target: int) -> str:
+    return seg + " " * max(0, target - width(seg))
+
+
+def threshold_color(v: float, yellow: float, red: float) -> str:
+    return RED if v >= red else YELLOW if v >= yellow else GREEN
+
+
+def git(*args: str, cwd: str | None = None) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", *args], stderr=subprocess.DEVNULL, text=True, cwd=cwd
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ""
+
+
+def diff_lines(*git_args: str, cwd: str) -> tuple[int, int]:
+    out = git("diff", "--numstat", *git_args, cwd=cwd)
+    a = d = 0
+    for line in out.splitlines():
+        f = line.split("\t")
+        if len(f) >= 2:
+            try:
+                a += int(f[0])
+                d += int(f[1])
+            except ValueError:
+                pass
+    return a, d
+
+
+def rl_segment(rl: dict, icon: str, label: str, fmt: str,
+               show_reset: bool = True, compact: bool = False) -> str | None:
+    """Render `<icon> <label> ↗ <pct>% ↻ <when>`. Drops reset when show_reset=False,
+    or collapses to `<icon> <pct>%` when compact=True."""
+    pct, ts = rl.get("used_percentage"), rl.get("resets_at")
+    if pct is None or ts is None:
+        return None
+    pct = round(pct)
+    color = threshold_color(pct, 70, 90)
+    if compact:
+        return f"{icon} {color}{pct}%{RESET}"
+    body = f"{icon} {label} {color}↗ {pct}%{RESET}"
+    if show_reset and ts is not None:
+        body += " ↻ " + datetime.fromtimestamp(ts).strftime(fmt)
+    return body
+
+
+def short_effort(level: str, compact: bool) -> str:
+    """xhigh → xh, medium → me, low → lo, etc."""
+    return level[:2] if compact and level else level
+
+
+def short_model(name: str, level: int) -> str:
+    """level 0 = full; 1 = strip "(...)" suffix; 2 = "<XX> <version>"
+    (first two letters of the family name, uppercased)."""
+    if level >= 1:
+        i = name.find("(")
+        if i > 0:
+            name = name[:i].rstrip()
+    if level >= 2:
+        parts = name.split()
+        if len(parts) >= 2:
+            return f"{parts[0][:2].upper()} {parts[1]}"
+    return name
+
+
+def _width_from_parent_tty() -> int | None:
+    """
+    Claude spawns the statusline with pipes for stdio, so the subprocess has
+    no controlling TTY of its own. But Claude itself does. Walk up via ps,
+    find a TTY name (e.g. "ttys001" on macOS, "pts/0" on Linux), open it,
+    and ask for its size.
+    """
+    try:
+        pid = os.getppid()
+        for _ in range(5):  # walk up at most 5 levels
+            r = subprocess.run(
+                ["ps", "-o", "tty=,ppid=", "-p", str(pid)],
+                capture_output=True, text=True, timeout=1,
+            )
+            parts = r.stdout.split()
+            if len(parts) < 2:
+                return None
+            tty, ppid = parts[0], parts[1]
+            if tty and tty not in ("?", "??"):
+                path = tty if tty.startswith("/") else f"/dev/{tty}"
+                try:
+                    with open(path) as f:
+                        return os.get_terminal_size(f.fileno()).columns
+                except OSError:
+                    pass
+            try:
+                pid = int(ppid)
+            except ValueError:
+                return None
+            if pid <= 1:
+                return None
+        return None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def terminal_width(reported: int | None = None, default: int = 120) -> int:
+    """
+    Best-effort terminal column count when stdio isn't a TTY.
+
+    Resolution order:
+      1. $STATUSLINE_WIDTH — hard override (use when terminals fail to
+         shrink pty cols below some minimum, e.g. Warp/Ghostty in
+         narrow panes).
+      2. The width the agent reported in its payload
+      3. $COLUMNS env var
+      4. Parent-process controlling TTY (ioctl)
+      5. /dev/tty
+      6. shutil.get_terminal_size
+      7. default
+
+    After detection, $STATUSLINE_MARGIN trims columns off the result.
+    """
+    override = os.environ.get("STATUSLINE_WIDTH")
+    if override and override.isdigit() and int(override) > 0:
+        return max(20, int(override))
+
+    detected = reported if isinstance(reported, int) and reported > 0 else None
+
+    cols = os.environ.get("COLUMNS")
+    if detected is None and cols and cols.isdigit() and int(cols) > 0:
+        detected = int(cols)
+
+    if detected is None:
+        detected = _width_from_parent_tty()
+
+    if detected is None:
+        try:
+            with open("/dev/tty") as tty:
+                detected = os.get_terminal_size(tty.fileno()).columns
+        except OSError:
+            pass
+
+    if detected is None:
+        try:
+            w = shutil.get_terminal_size((default, 24)).columns
+            if w > 0:
+                detected = w
+        except OSError:
+            pass
+
+    if detected is None:
+        detected = default
+
+    # Subtract a margin: claude doesn't render the status bar at the full pty
+    # width in any terminal we've tested (Ghostty needs ~5, Warp with sidebar
+    # open needs ~100). Override with $STATUSLINE_MARGIN for your setup.
+    default_margin = 6
+    try:
+        margin = int(os.environ.get("STATUSLINE_MARGIN", str(default_margin)))
+    except ValueError:
+        margin = default_margin
+    return max(20, detected - margin)
+
+
+def line_pixel_width(segs: list[str]) -> int:
+    """Width of a line joined by ' | '."""
+    if not segs:
+        return 0
+    return sum(width(s) for s in segs) + 3 * (len(segs) - 1)
+
+
+def aligned_line_width(line: list[str], other: list[str]) -> int:
+    """Width of `line` after column-alignment padding against `other`.
+    All non-last columns expand to max(line[i], other[i]) so the pipes line up.
+    """
+    if not line:
+        return 0
+    cols = max(len(line), len(other))
+    col_widths = [
+        max((width(l[i]) for l in (line, other) if i < len(l)), default=0)
+        for i in range(cols)
+    ]
+    total = 0
+    for i, seg in enumerate(line):
+        total += width(seg) if i == len(line) - 1 else col_widths[i]
+    if len(line) > 1:
+        total += 3 * (len(line) - 1)
+    return total
+
+
+def _abbreviate_path(p: str) -> str:
+    """`~/Projects/my_service` -> `~/.../my_service`.
+    All parent segments collapsed into a single `...`.
+    """
+    parts = p.split("/")
+    if len(parts) <= 2:
+        return p
+    return f"{parts[0]}/.../{parts[-1]}"
+
+
+def _home_relative(p: str) -> str:
+    home = os.path.expanduser("~")
+    if p == home:
+        return "~"
+    if p.startswith(home + "/"):
+        return "~" + p[len(home):]
+    return p
+
+
+def sandbox_badge() -> str:
+    """Sandbox indicator.
+
+    nono is a kernel-level Seatbelt sandbox with no container, so /.dockerenv -- the signal
+    the Docker-based sandbox used -- never exists under it, and an nclaude/ncco/nccr session
+    would otherwise render with no indicator at all. Detect NONO_CAP_FILE instead, and flag
+    the opt-in credential grants (--aws / --k8s) since "this session can reach live cloud or
+    cluster creds" is exactly what you want visible at a glance. Docker detection is kept as
+    a fallback so a containerised session still shows something.
+    """
+    cap = os.environ.get("NONO_CAP_FILE")
+    if cap:
+        extra = []
+        try:
+            with open(cap) as f:
+                caps = json.load(f)
+            names = {os.path.basename(p) for p in caps.get("bypass_protection_paths") or []}
+            if ".aws" in names:
+                extra.append("aws")
+            if ".kube" in names:
+                extra.append("k8s")
+            # Egress. allowed_domains is populated under supervised-proxy default-deny and empty
+            # when egress is unrestricted. Lockdown is the DEFAULT now, so flag the exception --
+            # a session that can reach any host -- rather than the normal case. Same principle as
+            # the aws/k8s tokens above: surface widened reach, stay quiet about the baseline.
+            if not caps.get("allowed_domains") and not caps.get("net_blocked"):
+                extra.append("net-open")
+        except (OSError, ValueError, AttributeError):
+            pass  # never let a malformed cap file break the statusline
+        return "🔒 nono" + ("·" + "·".join(extra) if extra else "") + " "
+    return "📦 " if os.path.exists("/.dockerenv") else ""
+
+
+def path_display(cwd: str, repo_root: str, style: str) -> str:
+    """`full` = home-relative cwd; `abbreviated` = parents to first char; `basename` = project name only."""
+    if style == "basename":
+        target = repo_root or cwd
+        return "~" if _home_relative(target) == "~" else os.path.basename(target)
+    rel = _home_relative(cwd)
+    return _abbreviate_path(rel) if style == "abbreviated" else rel
+
+
+def from_agy(data: dict) -> dict:
+    """Map the Antigravity CLI payload onto the Claude Code fields that build() reads."""
+    model = data.get("model") or {}
+    effort = model.get("effort", "")
+    name = model.get("display_name", "Unknown Model")
+    if effort and "(" in name:
+        name = name[:name.find("(")].rstrip()
+    # agy reports quotas per model family; third-party models such as Claude share "3p"
+    family = "gemini" if name.lower().startswith("gemini") else "3p"
+    quota = data.get("quota") or {}
+
+    def limit(period: str) -> dict:
+        q = quota.get(f"{family}-{period}") or {}
+        left, reset = q.get("remaining_fraction"), q.get("reset_time")
+        if left is None or not reset:
+            return {}
+        resets_at = datetime.fromisoformat(reset.replace("Z", "+00:00")).timestamp()
+        return {"used_percentage": (1 - left) * 100, "resets_at": resets_at}
+
+    return {
+        "model": {"display_name": name},
+        "effort": {"level": effort},
+        "context_window": data.get("context_window") or {},
+        "rate_limits": {"five_hour": limit("5h"), "seven_day": limit("weekly")},
+        "worktree": {"original_cwd": data.get("cwd") or (data.get("workspace") or {}).get("current_dir")},
+    }
+
+
+def build(data: dict, cwd: str, cfg: dict) -> tuple[list[str], list[str]]:
+    """Build line1 and line2 segments per the degradation flags in cfg."""
+    model = (data.get("model") or {}).get("display_name", "Unknown Model")
+    effort = (data.get("effort") or {}).get("level", "")
+    used = (data.get("context_window") or {}).get("used_percentage")
+    worktree_name = (data.get("worktree") or {}).get("name", "")
+    cost = (data.get("cost") or {}).get("total_cost_usd")
+    rl = data.get("rate_limits") or {}
+    rl_5h, rl_7d = rl.get("five_hour") or {}, rl.get("seven_day") or {}
+
+    sandbox = sandbox_badge()
+
+    line1 = [f"{sandbox}🤖 {short_model(model, cfg['model_level'])}"]
+    line2 = []
+
+    if effort and cfg["show_effort"]:
+        line1.append(f"💪 {short_effort(effort, cfg['effort_short'])}")
+
+    if used is not None:
+        pct = round(used)
+        line1.append(f"🧠 {threshold_color(pct, 50, 70)}{pct}%{RESET}")
+
+    if cost is not None and cfg["show_cost"]:
+        line1.append(f"💰 {threshold_color(cost, 1, 5)}${cost:.2f}{RESET}")
+
+    if cfg["show_5h"]:
+        s = rl_segment(rl_5h, "⏱️", "5h", "%H:%M",
+                       show_reset=cfg["show_5h_reset"], compact=cfg["rl_compact"])
+        if s:
+            line1.append(s)
+    if cfg["show_7d"]:
+        s = rl_segment(rl_7d, "📅", "7d", "%d/%m",
+                       show_reset=cfg["show_7d_reset"], compact=cfg["rl_compact"])
+        if s:
+            line1.append(s)
+
+    repo_root = git("rev-parse", "--show-toplevel", cwd=cwd) or cwd
+    line2.append(f"📁 {path_display(cwd, repo_root, cfg['path_style'])}")
+
+    branch = ""
+    if git("rev-parse", "--git-dir", cwd=cwd):
+        branch = git("branch", "--show-current", cwd=cwd) or git(
+            "rev-parse", "--abbrev-ref", "HEAD", cwd=cwd
+        )
+
+    if worktree_name and worktree_name != branch:
+        line2.append(f"🌳 {worktree_name}")
+
+    if branch:
+        git_str = branch
+        if git("rev-parse", "--abbrev-ref", "@{u}", cwd=cwd):
+            ahead = git("rev-list", "--count", "@{u}..HEAD", cwd=cwd) or "0"
+            behind = git("rev-list", "--count", "HEAD..@{u}", cwd=cwd) or "0"
+            if int(ahead) > 0:
+                git_str += f" ↑{ahead}"
+            if int(behind) > 0:
+                git_str += f" ↓{behind}"
+        line2.append(f"🌿 {git_str}")
+
+        # Diff line counts as a separate segment (staged green, unstaged yellow)
+        sa, sd = diff_lines("--cached", cwd=cwd)
+        ua, ud = diff_lines(cwd=cwd)
+        parts = []
+        if sa or sd:
+            parts.append(f"{GREEN}+{sa} -{sd}{RESET}")
+        if ua or ud:
+            parts.append(f"{YELLOW}+{ua} -{ud}{RESET}")
+        if parts:
+            line2.append("Δ " + " ".join(parts))
+
+    return line1, line2
+
+
+# Progressive degradation, lightest information loss first. Each step shaves
+# columns from line 1 or line 2 until the rendered width fits.
+# Three discrete states. Pick the widest one that fits the terminal.
+# `align` controls whether pipes are column-aligned across the two lines.
+CFG_FULL = {
+    "path_style": "full",
+    "show_effort": True,
+    "show_cost": True,
+    "show_5h": True,
+    "show_7d": True,
+    "show_5h_reset": True,
+    "show_7d_reset": True,
+    "model_level": 0,
+    "effort_short": False,
+    "rl_compact": False,
+    "align": False,
+}
+
+CFG_MID = {
+    "path_style": "abbreviated",   # ~/.../chezmoi
+    "show_effort": True,
+    "show_cost": True,
+    "show_5h": True,
+    "show_7d": False,              # drop 7d
+    "show_5h_reset": False,        # drop "↻ 21:00"
+    "show_7d_reset": False,
+    "model_level": 0,
+    "effort_short": False,
+    "rl_compact": False,
+    "align": False,
+}
+
+CFG_MIN = {
+    "path_style": "basename",      # chezmoi
+    "show_effort": True,
+    "show_cost": False,            # drop $
+    "show_5h": True,
+    "show_7d": False,
+    "show_5h_reset": False,
+    "show_7d_reset": False,
+    "model_level": 2,              # O 4.7
+    "effort_short": True,          # xh
+    "rl_compact": True,            # ⏱️ 11%
+    "align": False,                # no column padding — tighter
+}
+
+STATES = [CFG_FULL, CFG_MID, CFG_MIN]
+
+
+def main() -> None:
+    data = json.load(sys.stdin)
+    tw = terminal_width(data.get("terminal_width"))
+    if "--agy" in sys.argv[1:]:
+        data = from_agy(data)
+    cwd = (data.get("worktree") or {}).get("original_cwd") or os.getcwd()
+
+    # Pick the widest state that fits; fall through to MIN if even MID overflows.
+    # MID is given a small slack budget so we stay on MID through slight overflow
+    # rather than dropping straight to MIN — keeps more information visible.
+    MID_SLACK = 2
+    chosen = STATES[-1]
+    line1, line2 = build(data, cwd, chosen)
+    for cfg in STATES:
+        l1, l2 = build(data, cwd, cfg)
+        if cfg["align"]:
+            w1 = aligned_line_width(l1, l2)
+            w2 = aligned_line_width(l2, l1)
+        else:
+            w1, w2 = line_pixel_width(l1), line_pixel_width(l2)
+        budget = tw + (MID_SLACK if cfg is CFG_MID else 0)
+        if w1 <= budget and w2 <= budget:
+            chosen, line1, line2 = cfg, l1, l2
+            break
+        chosen, line1, line2 = cfg, l1, l2  # keep latest, fall through
+
+    if chosen["align"]:
+        cols = max(len(line1), len(line2))
+        col_widths = [
+            max((width(l[i]) for l in (line1, line2) if i < len(l)), default=0)
+            for i in range(cols)
+        ]
+        for ln in (line1, line2):
+            padded = " | ".join(
+                seg if i == len(ln) - 1 else pad(seg, col_widths[i])
+                for i, seg in enumerate(ln)
+            )
+            print(padded)
+    else:
+        for ln in (line1, line2):
+            print(" | ".join(ln))
+
+
+if __name__ == "__main__":
+    main()

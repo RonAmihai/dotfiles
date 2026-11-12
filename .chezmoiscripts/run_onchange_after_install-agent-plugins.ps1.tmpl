@@ -1,0 +1,25 @@
+{{ if eq .chezmoi.os "windows" -}}
+# plugins: {{ .codex_plugins | toJson }} {{ .agy_plugins | toJson }}
+if (Get-Command codex -ErrorAction SilentlyContinue) {
+  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$HOME\.codex" }
+{{- range .codex_plugins }}
+{{-   $name := index (splitList "@" .plugin) 0 }}
+{{-   $marketplace := index (splitList "@" .plugin) 1 }}
+  if (-not (Test-Path "$codexHome\plugins\cache\{{ $marketplace }}\{{ $name }}")) {
+{{-   with get . "marketplace" }}
+    codex plugin marketplace add {{ . }} *> $null
+{{-   end }}
+    codex plugin add {{ .plugin }} > $null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "agent plugins: Codex did not install {{ .plugin }}" }
+  }
+{{- end }}
+}
+if (Get-Command agy -ErrorAction SilentlyContinue) {
+{{- range $name, $source := .agy_plugins }}
+  if (-not (Test-Path "$HOME\.gemini\config\plugins\{{ $name }}")) {
+    agy plugin install {{ $source }} > $null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "agent plugins: agy did not install {{ $name }}" }
+  }
+{{- end }}
+}
+{{ end -}}

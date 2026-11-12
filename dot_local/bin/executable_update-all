@@ -1,0 +1,169 @@
+#!/usr/bin/env zsh
+# Usage: update-all [--skip-os-updates] [--clean] [--dry-run] [step ...]   (steps: the tool files in ~/.config/shell/tools)
+
+emulate -R zsh
+setopt extended_glob
+
+if [[ -n ${WORK_PROFILE:-} ]]; then
+    print -ru2 -- "${0:t}: leave the work session first, because the updates would change the real home"
+    exit 1
+fi
+
+# Each tool file registers its step with an order: 10 system packages, 15 apps that brew then records, 20 package
+# managers, 30 tools, 90 dotfiles. Steps run by order, then by name.
+typeset -a _update_queue
+_update_add() { _update_queue+=("$1:$2:$3") }
+DOTFILES_PHASE=update
+for _tool in ${XDG_CONFIG_HOME:-$HOME/.config}/shell/tools/*.(sh|zsh)(N); do
+    source $_tool
+done
+unset _tool DOTFILES_PHASE
+_update_queue=(${(o)_update_queue})
+step_names=(${${_update_queue#*:}%%:*})
+
+usage() {
+    print -r -- "usage: update-all [--skip-os-updates] [--clean] [--dry-run] [step ...]"
+    print -r -- "steps: ${(j:, :)step_names}"
+}
+
+mode=update
+integer skip_os=0 dry_run=0 _update_os_ran=0 _update_failed=0
+typeset -a only
+for arg in "$@"; do
+    case $arg in
+        --skip-os-updates|--skip-macos-updates) skip_os=1 ;;
+        --clean)   mode=clean ;;
+        --dry-run) dry_run=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -*)        print -ru2 -- "update-all: unknown option: $arg"; usage >&2; exit 2 ;;
+        *)         (( ${step_names[(Ie)$arg]} )) || { print -ru2 -- "update-all: unknown step: $arg"; usage >&2; exit 2; }
+                   only+=($arg) ;;
+    esac
+done
+
+_update_header() {
+    local name=$1 width=50
+    local pad=$(( width - ${#name} - 2 ))
+    local left="" right=""
+    repeat $(( pad / 2 )) left+="═"
+    repeat $(( pad - pad / 2 )) right+="═"
+    printf '\n\033[1;34m%s %s %s\033[0m\n' "$left" "$name" "$right"
+}
+
+_update_run() {
+    local cmd=$1
+    if (( dry_run )); then
+        print -r -- "  would run: $cmd"
+        return 0
+    fi
+    local start=$SECONDS
+    eval "$cmd"
+    local rc=$? elapsed=$(( SECONDS - start ))
+    if (( rc == 0 )); then
+        printf '\033[1;32m  ══ ✓ Done (%ds) ══\033[0m\n' "$elapsed"
+    else
+        printf '\033[1;31m  ══ ✗ Failed (%ds) ══\033[0m\n' "$elapsed"
+        (( _update_failed++ ))
+    fi
+    return $rc
+}
+
+_update_step() {
+    _update_header "$1"
+    _update_run "$2"
+}
+
+_update_has_files() {
+    (( $# ))
+}
+
+# Pulls a chezmoi repo when it can fast-forward and applies what came in; a file edited by hand is never overwritten
+_update_chezmoi() {
+    local title=$1 cm=$2
+    (( $+commands[$cm] )) || return 0
+    local src=$($cm source-path 2>/dev/null)
+    [[ -n $src && -d $src/.git ]] || return 0
+    _update_header "$title"
+    local upstream=$(git -C "$src" rev-parse --abbrev-ref '@{u}' 2>/dev/null)
+    if [[ -z $upstream ]]; then
+        print "  No upstream branch, so nothing to pull"
+    elif ! GIT_TERMINAL_PROMPT=0 git -C "$src" fetch --quiet; then
+        print "  Fetch failed, so nothing was pulled"
+    else
+        local behind=$(git -C "$src" rev-list --count 'HEAD..@{u}') ahead=$(git -C "$src" rev-list --count '@{u}..HEAD')
+        local dirty=$(git -C "$src" status --porcelain)
+        if (( behind == 0 )); then
+            print "  Up to date with $upstream"
+            (( ahead )) && print "  $ahead local commit(s) not pushed yet"
+            [[ -n $dirty ]] && print "  Uncommitted changes in $src"
+        elif (( ahead )) || [[ -n $dirty ]]; then
+            print "  $upstream has $behind new commit(s), not pulled: the repo has local commits or changes"
+        else
+            print "  Pulling $behind new commit(s) from $upstream"
+            _update_run "git -C ${(q)src} merge --ff-only --quiet '@{u}' && $cm apply --no-tty --keep-going </dev/null"
+        fi
+    fi
+    local changed=$($cm status 2>/dev/null)
+    [[ -n $changed ]] || return 0
+    print -rl -- "  "${^${(f)changed}}
+    printf '\033[0;90m  Keep a change: %s re-add <file>. Take the repo version: %s apply <file>.\033[0m\n' $cm $cm
+}
+
+_update_sudo() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif (( $+commands[sudo] )); then
+        sudo "$@"
+    elif (( $+commands[doas] )); then
+        doas "$@"
+    else
+        "$@"
+    fi
+}
+
+_with_sudo_keepalive() {
+    (( dry_run || EUID == 0 || ! $+commands[sudo] )) && { "$@"; return; }
+    sudo -v
+    setopt local_options no_notify no_monitor
+    { while sudo -vn 2>/dev/null; do sleep 30; done } &>/dev/null &
+    local sudo_pid=$!
+    trap "kill $sudo_pid 2>/dev/null" EXIT INT TERM
+    "$@"
+    kill $sudo_pid 2>/dev/null
+    wait $sudo_pid 2>/dev/null
+}
+
+_timed() {
+    local start=$SECONDS
+    "$@"
+    local elapsed=$(( SECONDS - start ))
+    _update_header "Complete ($(printf '%dm %ds' $(( elapsed / 60 )) $(( elapsed % 60 ))))"
+}
+
+run_steps() {
+    local entry order name
+    # Each step function checks its own condition and returns early when it does not apply
+    for entry in $_update_queue; do
+        order=${entry%%:*} name=${${entry#*:}%%:*}
+        (( ${#only} && ! ${only[(Ie)$name]} )) && continue
+        (( skip_os )) && [[ $order == 10 ]] && continue
+        ${entry##*:}
+    done
+    [[ $mode == update && $OSTYPE != darwin* ]] || return 0
+    (( skip_os || ${#only} || _update_os_ran )) && return 0
+    _update_header "System Packages"
+    if [[ -e /etc/NIXOS ]]; then
+        print -r -- "  NixOS: run 'sudo nixos-rebuild switch --upgrade' yourself"
+    elif (( $+commands[emerge] )); then
+        print -r -- "  Gentoo: run 'sudo emerge --sync && sudo emerge -uDN @world' yourself"
+    else
+        print -r -- "  No supported system package manager found"
+    fi
+}
+
+if [[ $mode == update ]]; then
+    _with_sudo_keepalive _timed run_steps
+else
+    _timed run_steps
+fi
+(( _update_failed == 0 ))

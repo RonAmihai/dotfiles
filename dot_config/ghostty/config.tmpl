@@ -1,0 +1,61 @@
+# =============================================================================
+# Appearance
+# =============================================================================
+theme = Dracula
+# Dracula's own #282a36 ground reads far lighter than Warp. Warp paints its
+# chrome near-black, so keep the palette and force a black ground.
+background = #000000
+background-opacity = 0.75
+background-blur = 20
+font-family = JetBrainsMono Nerd Font Mono
+font-size = 13
+cursor-style = bar
+cursor-style-blink = true
+mouse-hide-while-typing = true
+
+# =============================================================================
+# Window
+# =============================================================================
+window-padding-x = 8
+window-padding-y = 6
+window-padding-balance = true
+{{ if eq .chezmoi.os "darwin" -}}
+macos-titlebar-style = transparent
+macos-option-as-alt = true
+{{ end -}}
+
+# =============================================================================
+# Behavior
+# =============================================================================
+copy-on-select = false
+clipboard-trim-trailing-spaces = true
+clipboard-paste-protection = true
+scrollback-limit = 1000000
+desktop-notifications = true
+
+# =============================================================================
+# Keybindings — CSI sequences for zsh text editor widgets
+# =============================================================================
+# Shift-select
+keybind = cmd+shift+arrow_left=csi:1;10D
+keybind = cmd+shift+arrow_right=csi:1;10C
+keybind = shift+alt+arrow_left=csi:1;4D
+keybind = shift+alt+arrow_right=csi:1;4C
+
+# Clipboard & editing
+keybind = cmd+a=csi:97;9~
+# Terminal select-all, for TUIs that cannot read the CSI above.
+keybind = cmd+ctrl+a=select_all
+keybind = performable:cmd+c=copy_to_clipboard
+keybind = cmd+c=csi:27;9;99~
+keybind = cmd+x=csi:120;9~
+keybind = cmd+z=csi:122;9~
+
+# Multi-line input
+keybind = shift+enter=text:\x1b\x0d
+
+# =============================================================================
+# Global hotkey
+# =============================================================================
+# keybind = global:ctrl+super+enter=toggle_visibility
+# keybind = global:ctrl+alt+super+enter=new_window

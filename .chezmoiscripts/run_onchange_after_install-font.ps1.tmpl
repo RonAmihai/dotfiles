@@ -1,0 +1,16 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+# Installs JetBrainsMono Nerd Font Mono, which the terminals and the oh-my-posh theme use, when it is missing
+$installPackages = '{{ env "DOTFILES_INSTALL_PACKAGES" }}'
+$folders = @("$env:WINDIR\Fonts", "$env:LOCALAPPDATA\Microsoft\Windows\Fonts")
+if (Get-ChildItem -Path $folders -Filter 'JetBrainsMonoNerdFontMono-*' -ErrorAction SilentlyContinue) { exit 0 }
+if ($installPackages -ne '1') {
+    Write-Output 'JetBrainsMono Nerd Font Mono is missing; install it explicitly with winget'
+    exit 0
+}
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget install --id DEVCOM.JetBrainsMonoNerdFont --exact --silent --accept-package-agreements --accept-source-agreements
+} else {
+    Write-Output 'Install the font "JetBrainsMono Nerd Font Mono" for the prompt glyphs'
+}
+exit 0
+{{- end }}

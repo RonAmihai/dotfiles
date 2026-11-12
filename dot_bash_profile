@@ -1,0 +1,4 @@
+# Login shells (macOS Terminal, Git Bash, ssh) read this file instead of ~/.bashrc
+export BASH_SILENCE_DEPRECATION_WARNING=1
+[ -r ~/.profile ] && . ~/.profile
+[ -r ~/.bashrc ] && . ~/.bashrc

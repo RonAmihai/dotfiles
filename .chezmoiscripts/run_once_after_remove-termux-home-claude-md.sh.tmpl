@@ -1,0 +1,11 @@
+{{- if and (eq .chezmoi.os "android") (not (env "CI")) -}}
+#!/bin/sh
+# The android branch managed ~/CLAUDE.md; the Termux rules now come through each agent's own rules file
+f="$HOME/CLAUDE.md"
+[ -f "$f" ] || exit 0
+if [ "$(sha256sum "$f" | cut -d ' ' -f 1)" = c9f8b640ff409810417d472fe668a34923df9f6c99c7e7719855816050ae2785 ]; then
+    rm -f "$f"
+else
+    echo "~/CLAUDE.md differs from the old managed copy, so it was kept"
+fi
+{{ end -}}

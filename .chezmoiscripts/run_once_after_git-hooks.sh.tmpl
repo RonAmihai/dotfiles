@@ -1,0 +1,6 @@
+{{- if ne .chezmoi.os "windows" -}}
+#!/bin/sh
+# Turns on the checks in .githooks for this repo's own clone
+[ -d {{ .chezmoi.sourceDir | quote }}/.git ] || exit 0
+git -C {{ .chezmoi.sourceDir | quote }} config core.hooksPath .githooks
+{{- end }}

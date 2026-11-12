@@ -1,0 +1,18 @@
+{
+  "mcp": {
+    "servers": {
+      "sample": {
+        "type": "local",
+        "command": ["sample-mcp"]
+      }
+    }
+  },
+  "plugins": ["sample-plugin"],
+  "permissions": [
+    {
+      "action": "shell",
+      "resource": "ls *",
+      "effect": "allow"
+    }
+  ]
+}

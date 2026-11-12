@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "style": "diamond",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
+          "template": " {{ if .SSHSession }}\uf817 {{ end }}{{ .UserName }}@{{ .HostName }} ",
+          "foreground": "#000000",
+          "background": "#ffa600",
+          "type": "session"
+        },
+        {
+          "properties": {
+            "mapped_locations": {
+              "re:([A-Za-z]:/Users/[^/]+)": "\uf17a",
+              "re:(/mnt/[a-z]/Users/[^/]+)": "\uf17a"
+            },
+            "max_depth": 8,
+            "style": "agnoster_short"
+          },
+          "style": "powerline",
+          "foreground": "#ffffff",
+          "powerline_symbol": "\ue0b0",
+          "background": "#0089fa",
+          "type": "path"
+        },
+        {
+          "style": "powerline",
+          "template": " {{ .HEAD }} {{ .BranchStatus }}{{ if .Working.Changed }} \uf044 {{ .Working.String }}{{ end }}{{ if and (.Staging.Changed) (.Working.Changed) }} |{{ end }}{{ if .Staging.Changed }} \uf046 {{ .Staging.String }}{{ end }}{{ if gt .StashCount 0}} \uf692 {{ .StashCount }}{{ end }}{{ if gt .WorktreeCount 0}} \uf1bb {{ .WorktreeCount }}{{ end }} ",
+          "foreground": "#000000",
+          "powerline_symbol": "\ue0b0",
+          "background": "#C678DD",
+          "type": "git"
+        }
+      ]
+    },
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "style": "plain",
+          "template": "\n\ue602",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "version": 3,
+  "final_space": true
+}

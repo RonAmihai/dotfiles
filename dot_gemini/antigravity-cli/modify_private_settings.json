@@ -1,0 +1,31 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Sets the status line, the full-screen mode and the shared allowed commands on every apply; agy owns the rest of the file */ -}}
+{{- $settings := dict -}}
+{{- if .chezmoi.stdin | trim -}}
+{{-   $settings = .chezmoi.stdin | fromJson -}}
+{{- end -}}
+{{- $command := printf "%s --agy" (joinPath .chezmoi.homeDir ".local/bin/agent-statusline") -}}
+{{- /* Windows cannot run a script by its shebang line */ -}}
+{{- if eq .chezmoi.os "windows" }}{{ $command = printf "python %q --agy" (joinPath .chezmoi.homeDir ".local/bin/agent-statusline") }}{{ end -}}
+{{- $_ := set $settings "statusLine" (dict "type" "command" "command" $command) -}}
+{{- $_ := set $settings "altScreenMode" "always" -}}
+{{- /* Commands run in the agy sandbox without a prompt and risky ones still ask, like Claude Code auto mode; a mode that agy saved stays */ -}}
+{{- if not (get $settings "agentMode") }}{{ $_ := set $settings "agentMode" "auto" }}{{ end -}}
+{{- /* Reads of the skill folders, and the allowed commands of .chezmoidata/agents.yaml, which Claude Code shares; rules that agy saved itself stay */ -}}
+{{- $permissions := get $settings "permissions" | default (dict) -}}
+{{- $retired := list -}}
+{{- range includeTemplate "agent-retired-commands" . | fromJson }}{{ $retired = append $retired (printf "command(%s)" (regexReplaceAll `(:\*| \*)$` . "")) }}{{ end -}}
+{{- $allow := list -}}
+{{- range get $permissions "allow" | default (list) -}}
+{{-   if not (has . $retired) }}{{ $allow = append $allow . }}{{ end -}}
+{{- end -}}
+{{- $rules := list (printf "read_file(%s)" (joinPath .chezmoi.destDir ".agents" "skills")) (printf "read_file(%s)" (joinPath .chezmoi.destDir ".gemini" "config" "skills")) (printf "read_file(%s)" (joinPath .chezmoi.destDir ".gemini" "config" "plugins")) (printf "read_file(%s)" (joinPath .chezmoi.destDir ".config" "agent-hooks")) "command(agy-reload --request)" -}}
+{{- range includeTemplate "agent-allowed-commands" . | fromJson -}}
+{{-   $rules = append $rules (printf "command(%s)" (regexReplaceAll `(:\*| \*)$` . "")) -}}
+{{- end -}}
+{{- range $rules -}}
+{{-   if not (has . $allow) }}{{ $allow = append $allow . }}{{ end -}}
+{{- end -}}
+{{- $_ := set $permissions "allow" $allow -}}
+{{- $_ := set $settings "permissions" $permissions -}}
+{{ $settings | toPrettyJson -}}

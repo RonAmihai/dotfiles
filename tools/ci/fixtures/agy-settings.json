@@ -1,0 +1,8 @@
+{
+  "model": "sample-model",
+  "statusLine": {
+    "type": "command",
+    "command": "old-statusline"
+  },
+  "trustedWorkspaces": ["/sample"]
+}

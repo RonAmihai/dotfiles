@@ -1,0 +1,51 @@
+#!/bin/sh
+# Stops a push when a zsh file has a syntax error, a JSON file is invalid, or a template fails to render against this HOME
+repo=$(git rev-parse --show-toplevel)
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+failed=0
+
+for f in $(git -C "$repo" ls-files '*.zsh'); do
+    zsh -n "$repo/$f" || { echo "pre-push: zsh syntax error in $f"; failed=1; }
+done
+if command -v jq >/dev/null 2>&1; then
+    for f in $(git -C "$repo" ls-files '*.json'); do
+        grep -q '{{' "$repo/$f" && continue
+        jq empty "$repo/$f" 2>/dev/null || { echo "pre-push: invalid JSON in $f"; failed=1; }
+    done
+fi
+mkdir -p "$tmp/home"
+chezmoi --source "$repo" --config "$tmp/chezmoi.toml" --destination "$tmp/home" apply --no-tty --force --exclude scripts >/dev/null \
+    || { echo "pre-push: chezmoi cannot apply the repo to an empty HOME"; failed=1; }
+chezmoi --source "$repo" --config "$tmp/chezmoi.toml" diff --no-pager >/dev/null \
+    || { echo "pre-push: chezmoi cannot render the repo against this HOME"; failed=1; }
+
+# The package check asks Homebrew, GitHub and the App Store, so it runs only when a pushed commit changes a Brewfile
+zero=0000000000000000000000000000000000000000
+changed=
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue
+    if [ "$remote_sha" = "$zero" ]; then
+        commits=$(git rev-list "$local_sha" --not --remotes)
+    else
+        commits=$(git rev-list "$remote_sha..$local_sha")
+    fi
+    for c in $commits; do
+        changed="$changed $(git show --name-only --format= "$c")"
+    done
+done
+case $changed in
+    *dot_config/homebrew/*Brewfile*)
+        check="$(chezmoi source-path 2>/dev/null)/tools/package-check/check-package-lists.sh"
+        if [ ! -r "$check" ]; then
+            echo "pre-push: skipped the package check, because $check is missing"
+        else
+            for f in $(git -C "$repo" ls-files 'dot_config/homebrew/*Brewfile'); do
+                bash "$check" "$repo/$f" > "$tmp/packages.log" 2>&1 \
+                    || { grep -v '^ok:' "$tmp/packages.log"; echo "pre-push: $f has a missing, deprecated or disabled entry"; failed=1; }
+            done
+        fi ;;
+esac
+
+[ "$failed" = 0 ] || echo "pre-push: fix the errors above, or push with --no-verify"
+exit "$failed"

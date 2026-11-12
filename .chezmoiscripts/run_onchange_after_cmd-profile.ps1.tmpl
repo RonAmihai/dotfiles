@@ -1,0 +1,23 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+$key = 'HKCU:\Software\Microsoft\Command Processor'
+$autorun = Join-Path $HOME '.config\cmd\autorun.cmd'
+$profile = Join-Path $HOME '.config\cmd\profile.cmd'
+$managed = "call `"$autorun`""
+New-Item -Path $key -Force | Out-Null
+$current = (Get-ItemProperty -Path $key -Name AutoRun -ErrorAction SilentlyContinue).AutoRun
+$updated = if (-not $current) { $managed }
+    elseif ($current -like "*$autorun*") { $current }
+    elseif ($current -like "*$profile*") { $current.Replace("call `"$profile`"", $managed) }
+    else { "$current & $managed" }
+if ($updated -ne $current) {
+    Set-ItemProperty -Path $key -Name AutoRun -Value $updated
+}
+
+if ((Get-Command clink -ErrorAction SilentlyContinue) -and (Get-Command oh-my-posh -ErrorAction SilentlyContinue)) {
+    $theme = Join-Path $HOME '.config\oh-my-posh\cli-theme.omp.json'
+    if (Test-Path -LiteralPath $theme) {
+        clink config prompt use oh-my-posh
+        clink set ohmyposh.theme ($theme -replace '\\', '/')
+    }
+}
+{{- end }}

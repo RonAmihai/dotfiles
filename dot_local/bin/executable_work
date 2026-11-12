@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Usage: work [--source DIR | REPO_URL] [-c COMMAND] | work --status | work --end — a shell whose work config lives in a temporary profile, which the end of the shell deletes
+set -uo pipefail
+
+# The shell tool file work.sh finds a profile that a closed session left at the same path
+if [ -x /data/data/com.termux/files/usr/bin/pkg ]; then
+    profile=${PREFIX:-/data/data/com.termux/files/usr}/tmp/work-profile
+    sh_bin=${PREFIX:-/data/data/com.termux/files/usr}/bin/sh
+else
+    tmp=${TMPDIR:-/tmp}
+    profile=${tmp%/}/work-profile-$(id -u)
+    sh_bin=/bin/sh
+fi
+home=$profile/home
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+personal_config=$config_home/chezmoi/chezmoi.toml
+
+say() { printf 'work: %s\n' "$*" >&2; }
+die() { say "$*"; exit 1; }
+
+usage() {
+    echo "usage: work [--source DIR | REPO_URL] [-c COMMAND]   start a work session, or run one command in it"
+    echo "       work --status                               show whether a work profile is on disk"
+    echo "       work --end                                  delete a work profile that a closed session left"
+}
+
+session_pid() { cat "$profile/pid" 2>/dev/null; }
+session_alive() { kill -0 "$(session_pid)" 2>/dev/null; }
+started_at() { cat "$profile/started" 2>/dev/null; }
+
+saved_repo() {
+    sed -n "s/^export WORK_DOTFILES_REPO=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}\$/\1/p" "$HOME/.local.zsh" 2>/dev/null | tail -n 1
+}
+
+# The SDK folders change only when an update runs, and they hold most of the files in a home folder
+leak_report() {
+    local leaks
+    [ -f "$profile/started" ] || return 0
+    leaks=$(find "$HOME" -xdev \( -path "$HOME/storage" -o -path "$HOME/Library" -o -path "$HOME/.dotnet" \) -prune \
+        -o \( -type f -o -type l \) -newer "$profile/started" -print 2>/dev/null)
+    if [ -z "$leaks" ]; then
+        say "no file in the home folder changed during the session"
+        return 0
+    fi
+    say "files in the home folder that changed during the session, by folder. Check that none of them holds work data:"
+    printf '%s\n' "$leaks" | awk -v home="$HOME/" '
+        { p = substr($0, length(home) + 1); n = split(p, part, "/")
+          key = n > 2 ? part[1] "/" part[2] "/" : (n == 2 ? part[1] "/" : part[1]); count[key]++ }
+        END { for (k in count) printf "  ~/%s (%d)\n", k, count[k] }' | sort >&2
+    say "not scanned: ~/.dotnet, ~/Library and ~/storage"
+}
+
+end_profile() {
+    [ -d "$profile" ] || return 0
+    leak_report
+    rm -rf "$profile"
+    say "deleted the work profile"
+}
+
+source_dir='' repo='' command=''
+while [ $# -gt 0 ]; do
+    case $1 in
+        --status)
+            if [ ! -d "$profile" ]; then
+                echo "no work profile"
+            elif session_alive; then
+                echo "work session running since $(started_at) (pid $(session_pid))"
+            else
+                echo "work profile from $(started_at) is still on disk: run work --end"
+            fi
+            exit 0 ;;
+        --end)
+            [ -d "$profile" ] || { echo "no work profile"; exit 0; }
+            session_alive && die "the work session $(session_pid) still runs: leave it with exit"
+            end_profile
+            exit 0 ;;
+        --source|-c)
+            [ $# -ge 2 ] || die "$1 needs a value"
+            if [ "$1" = --source ]; then source_dir=$2; else command=$2; fi
+            shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) usage >&2; die "unknown option: $1" ;;
+        *) repo=$1; shift ;;
+    esac
+done
+
+[ -z "${WORK_PROFILE:-}" ] || die "this shell is already a work session"
+if [ -d "$HOME/.local/share/chezmoi-work" ] || [ -f "$config_home/git/work.gitconfig" ]; then
+    die "this machine has the work layer installed, so it needs no work session"
+fi
+if [ -d "$profile" ]; then
+    session_alive && die "a work session already runs (pid $(session_pid))"
+    die "a work profile from $(started_at) is still on disk: run work --end first"
+fi
+[ -f "$personal_config" ] || die "no personal chezmoi config at $personal_config"
+
+if [ -z "$source_dir" ]; then
+    repo=${repo:-${WORK_DOTFILES_REPO:-$(saved_repo)}}
+    if [ -z "$repo" ]; then
+        [ -t 0 ] || die "no work repo: pass its URL, or set WORK_DOTFILES_REPO"
+        read -r -p "Work dotfiles repo URL: " repo
+        [ -n "$repo" ] || die "no work repo"
+        printf "export WORK_DOTFILES_REPO='%s'\n" "$repo" >> "$HOME/.local.zsh"
+        say "saved the repo URL in ~/.local.zsh"
+    fi
+fi
+
+umask 077
+mkdir -p "$home/.config/chezmoi" "$home/.local/bin" || die "cannot create $profile"
+date '+%Y-%m-%d %H:%M' > "$profile/started"
+echo $$ > "$profile/pid"
+trap end_profile EXIT
+trap 'exit 129' HUP
+trap 'exit 143' TERM
+# A handler, not an ignore: an ignored SIGINT would stay ignored in the session shell too
+trap : INT
+
+if [ -n "$source_dir" ]; then
+    cp -R "$source_dir" "$profile/src" || die "cannot copy $source_dir"
+else
+    git clone -q --depth 1 "$repo" "$profile/src" </dev/null || die "cannot clone $repo"
+fi
+
+printf '# The work layer needs no data\n' > "$profile/work.toml"
+# The work layer first, so the personal templates read the data that it adds
+chezmoi --config "$profile/work.toml" --source "$profile/src" --destination "$home" \
+    --persistent-state "$profile/work.boltdb" --cache "$profile/cache" \
+    apply --exclude scripts,externals --force --no-tty </dev/null >/dev/null || die "the work layer did not apply"
+{ printf 'destDir = "%s"\n' "$home"; cat "$personal_config"; } > "$home/.config/chezmoi/chezmoi.toml"
+chezmoi --config "$home/.config/chezmoi/chezmoi.toml" --destination "$home" \
+    --persistent-state "$home/.config/chezmoi/chezmoistate.boltdb" --cache "$profile/cache" \
+    apply --exclude scripts,externals --force --no-tty </dev/null >/dev/null || die "the personal layer did not apply"
+
+if [ -f "$config_home/gh/hosts.yml" ]; then
+    mkdir -p "$home/.config/gh" && cp "$config_home/gh/hosts.yml" "$home/.config/gh/"
+fi
+# The personal .gitconfig includes the work file through ~, which is the real home
+printf '[include]\n\tpath = %s\n[include]\n\tpath = %s\n' "$home/.gitconfig" "$home/.config/git/work.gitconfig" > "$profile/gitconfig"
+# agy has no config folder variable, so it gets the profile as its home
+if agy_bin=$(command -v agy); then
+    printf '#!%s\nHOME=%s exec %s "$@"\n' "$sh_bin" "$home" "$agy_bin" > "$home/.local/bin/agy"
+    chmod +x "$home/.local/bin/agy"
+fi
+
+export WORK_PROFILE=$profile DOTFILES_HOME=$home
+export CLAUDE_CONFIG_DIR=$home/.claude CODEX_HOME=$home/.codex
+export GH_CONFIG_DIR=$home/.config/gh GLAB_CONFIG_DIR=$home/.config/glab-cli
+export XDG_CONFIG_HOME=$home/.config XDG_CACHE_HOME=$home/.cache
+export HISTFILE=$home/.zsh_history _ZO_DATA_DIR=$home/.local/share/zoxide
+export GIT_CONFIG_GLOBAL=$profile/gitconfig
+# Package caches, which would keep a work project's packages in the real home
+export DOTNET_CLI_HOME=$home NUGET_PACKAGES=$home/.nuget/packages
+export NUGET_HTTP_CACHE_PATH=$home/.local/share/NuGet/http-cache NUGET_PLUGINS_CACHE_PATH=$home/.local/share/NuGet/plugin-cache
+export npm_config_cache=$home/.npm GOPATH=$home/go GOCACHE=$home/.cache/go-build PIP_CACHE_DIR=$home/.cache/pip
+export PATH=$home/.local/bin:$PATH
+
+if [ -n "$command" ]; then
+    zsh -c "$command"
+else
+    say "work session: work config lives in $profile until you leave with exit"
+    zsh -i
+fi

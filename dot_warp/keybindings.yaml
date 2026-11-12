@@ -1,0 +1,12 @@
+---
+"terminal:select_all_blocks": none
+"editor_view:cut_all_left": ctrl-u
+"editor_view:select_all": cmd-a
+"workspace:rename_active_tab": ctrl-shift-T
+"workspace:update_and_relaunch": ctrl-cmd-r
+"editor_view:clear_and_copy_lines": none
+"workspace:show_theme_chooser": none
+"workspace:activate_next_tab": cmd-]
+"workspace:activate_prev_tab": cmd-[
+"pane_group:navigate_next": none
+"pane_group:navigate_prev": none

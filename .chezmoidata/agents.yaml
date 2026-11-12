@@ -1,0 +1,39 @@
+# MCP servers that Codex and agy get; a work layer adds its own under the same key in ~/.config/chezmoi/data.d/
+agent_mcp_servers:
+  context7: https://mcp.context7.com/mcp
+
+# JetBrains IDEs that every agent gets as an MCP server and as skills, once the IDE has run. chezmoi writes each port
+# into the idea.properties of the IDE, which wins over the port on its MCP Server settings page
+jetbrains_ides:
+  rider: { cache: Rider, app: Rider, launcher: rider, port: 64342, files: [".sln", ".slnx", ".csproj"] }
+  goland: { cache: GoLand, app: GoLand, launcher: goland, port: 64343, files: ["go.mod"] }
+  pycharm: { cache: PyCharm, app: PyCharm, launcher: pycharm, port: 64344, files: ["pyproject.toml", "requirements.txt"] }
+  idea: { cache: IntelliJIdea, app: IntelliJ IDEA, launcher: idea, port: 64345, files: ["pom.xml", "build.gradle", "build.gradle.kts"] }
+  webstorm: { cache: WebStorm, app: WebStorm, launcher: webstorm, port: 64346, files: ["package.json"] }
+  clion: { cache: CLion, app: CLion, launcher: clion, port: 64347, files: ["CMakeLists.txt"] }
+  rustrover: { cache: RustRover, app: RustRover, launcher: rustrover, port: 64348, files: ["Cargo.toml"] }
+  rubymine: { cache: RubyMine, app: RubyMine, launcher: rubymine, port: 64349, files: ["Gemfile"] }
+  phpstorm: { cache: PhpStorm, app: PhpStorm, launcher: phpstorm, port: 64350, files: ["composer.json"] }
+  datagrip: { cache: DataGrip, app: DataGrip, launcher: datagrip, port: 64351, files: [] }
+
+# Commands that run without a prompt. Claude Code gets Bash(<entry>), and agy gets command(<entry>) without a
+# trailing ":*" or " *". A layer adds its own under the same key in ~/.config/chezmoi/data.d/. List only a command
+# that no option can make start another program or write a file.
+agent_allowed_commands: []
+
+# Commands that chezmoi removes from the agents' settings, which otherwise keep every rule they ever got. A layer
+# adds its own under the same key in ~/.config/chezmoi/data.d/.
+agent_retired_commands: []
+
+# Codex plugins; marketplace is the source to add first when Codex does not know it
+codex_plugins:
+  - plugin: superpowers@openai-curated
+  - plugin: simple-english@simple-english
+    marketplace: AminBlg/SimpleEnglish
+
+agy_plugins:
+  superpowers: https://github.com/obra/superpowers
+
+# opencode installs these itself from the plugins list in its configuration
+opencode_plugins:
+  - superpowers@git+https://github.com/obra/superpowers.git

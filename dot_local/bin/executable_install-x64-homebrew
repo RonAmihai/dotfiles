@@ -1,0 +1,31 @@
+#!/bin/bash
+# install-x64-homebrew - Install the Intel Homebrew in /usr/local for packages with no Apple Silicon build
+set -euo pipefail
+
+if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
+    echo "install-x64-homebrew: needs macOS on Apple Silicon" >&2
+    exit 1
+fi
+if [ -x /usr/local/bin/brew ]; then
+    echo "The Intel Homebrew is already in /usr/local. Run it with xbrew."
+    exit 0
+fi
+if [ ! -x /opt/homebrew/bin/git ]; then
+    echo "install-x64-homebrew: needs git from the native Homebrew first: brew install git" >&2
+    exit 1
+fi
+arch -x86_64 /usr/bin/true 2>/dev/null || softwareupdate --install-rosetta --agree-to-license
+
+# Homebrew's install.sh refuses Intel on macOS, so this does what its "untar anywhere" install does
+dirs="/usr/local/Homebrew /usr/local/bin /usr/local/Cellar /usr/local/Caskroom /usr/local/etc /usr/local/include
+    /usr/local/lib /usr/local/opt /usr/local/sbin /usr/local/share /usr/local/var/homebrew"
+sudo mkdir -p $dirs
+sudo chown "$(id -un):admin" $dirs
+/opt/homebrew/bin/git clone https://github.com/Homebrew/brew /usr/local/Homebrew
+ln -sf /usr/local/Homebrew/bin/brew /usr/local/bin/brew
+
+# Apple's git fails under Rosetta on macOS 27, which has no x86_64 libxcrun
+export HOMEBREW_GIT_PATH=/opt/homebrew/bin/git
+arch -x86_64 /usr/local/bin/brew update --force --quiet
+arch -x86_64 /usr/local/bin/brew tap buo/cask-upgrade
+echo "Done. Install an x64 package with: xbrew install <name>"

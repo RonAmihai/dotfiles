@@ -1,0 +1,36 @@
+name: versions
+
+# Dependabot cannot see versions in download URLs or docker run commands, so this job checks them every week
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check that the pinned tools are the newest releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          failed=0
+          check() {
+            latest=$(gh api "repos/$2/releases/latest" --jq .tag_name)
+            if [ "$latest" = "$3" ]; then
+              echo "ok: $1 $3 is the newest release"
+            else
+              echo "::error::$1 is pinned at ${3:-nothing}, but the newest release is $latest"
+              failed=1
+            fi
+          }
+          check oh-my-posh JanDeDobbeleer/oh-my-posh "$(grep -o -E 'oh-my-posh/releases/download/v[0-9.]+' .github/workflows/shell.yml | sed 's|.*/||')"
+          check gitleaks gitleaks/gitleaks "$(grep -o -E 'gitleaks:v[0-9.]+' .github/workflows/secrets.yml | sed 's/.*://')"
+          exit "$failed"

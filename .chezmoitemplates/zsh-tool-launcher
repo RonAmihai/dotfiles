@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# Runs the zsh function named like this script from the {{ . }} file in ~/.config/shell/tools, so bash, scripts and git can call it
+# IDEs and git can start this with a bare PATH, so take PATH and Homebrew from the shared environment file first
+[[ -r ~/.config/shell/env.sh ]] && source ~/.config/shell/env.sh
+DOTFILES_PHASE=launcher
+for _tool in ~/.config/shell/tools/{{ . }}.(sh|zsh)(N); do
+    source "$_tool"
+done
+(( $+functions[${0:t}] )) || { print -ru2 -- "${0:t}: needs {{ . }}, which is not installed"; exit 1; }
+${0:t} "$@"

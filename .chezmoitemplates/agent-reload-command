@@ -1,0 +1,9 @@
+{{- /* A Codex or agy skill for the agent-reload launcher. Codex calls a skill as $name, and agy as /name. */ -}}
+{{- $what := printf "Restart %s and resume this session" .title -}}
+{{- if eq .kind "update" }}{{ $what = printf "Update %s, restart it, and resume this session" .title }}{{ end -}}
+---
+name: {{ .command }}
+description: {{ $what }}. If the user types {{ .trigger }}{{ .command }} or asks for it, use it. Never use it on your own.
+---
+
+Run `{{ .launcher }} --request {{ .kind }}` once. Show its output to the user, and do nothing else.

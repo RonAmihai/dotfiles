@@ -1,0 +1,28 @@
+{{ if and (ne .chezmoi.os "windows") (not (env "CI")) -}}
+{{- $ides := includeTemplate "jetbrains-ides" . | fromJson -}}
+#!/bin/sh
+# ports:{{ range $ide, $spec := $ides }} {{ $spec.configDir }}={{ $spec.port }}{{ end }}
+set -u
+set_port() {
+  [ -d "$1" ] || return 0
+  file="$1/idea.properties"
+  line="idea.mcp.server.force.port=$2"
+  if [ -f "$file" ] && grep -qxF "$line" "$file"; then
+    return 0
+  fi
+  if [ -f "$file" ] && grep -q '^idea\.mcp\.server\.force\.port=' "$file"; then
+    tmp=$(mktemp) || return 1
+    sed "s/^idea\.mcp\.server\.force\.port=.*/$line/" "$file" > "$tmp" && cat "$tmp" > "$file"
+    rm -f "$tmp"
+  else
+    if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+      echo >> "$file"
+    fi
+    echo "$line" >> "$file"
+  fi
+  echo "jetbrains ports: $file now asks for port $2. Restart the IDE to use it"
+}
+{{- range $ide, $spec := $ides }}
+set_port {{ $spec.configDir | quote }} {{ $spec.port }}
+{{- end }}
+{{ end -}}

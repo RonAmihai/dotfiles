@@ -1,0 +1,81 @@
+{
+  "$schema": "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux.schema.json",
+  "schemaVersion": 1,
+
+  "app": {
+    "newWorkspacePlacement": "end",
+    "workspaceInheritWorkingDirectory": true,
+    "minimalMode": true
+  },
+
+  "terminal": {
+    "copyOnSelect": false
+  },
+
+  "notifications": {
+    "agentTurnComplete": "always",
+    "agentPermissionPrompt": true,
+    "agentIdleReminder": true,
+    "sound": "default",
+    "dockBadge": true,
+    "showInMenuBar": true,
+    "paneFlash": true,
+    "unreadPaneRing": true
+  },
+
+  "sidebar": {
+    "showAgentActivity": true,
+    "loadingSpinnerPosition": "leading"
+  },
+
+  "automation": {
+    "claudeCodeIntegration": true,
+    "claudeBinaryPath": "{{ .chezmoi.homeDir }}/.local/bin/claude-reload",
+    "workspaceAutoNaming": true
+  },
+
+  "workspaceGroups": {
+    "byCwd": {
+{{- range $pattern, $group := get (includeTemplate "extra-data" . | fromJson) "cmux_workspace_groups" | default (dict) }}
+      {{ $pattern | toJson }}: {{ $group | toJson }},
+{{- end }}
+      "~/Projects": {
+        "color": "#006B6B",
+        "icon": "folder.fill"
+      },
+      "~/.local/share/chezmoi": {
+        "color": "#3E4B5E",
+        "icon": "gearshape.fill"
+      }
+    }
+  },
+
+  "shortcuts": {
+    "bindings": {
+      "showHideAllWindows": "ctrl+cmd+enter",
+
+      "newTab": "cmd+t",
+      "newSurface": "cmd+shift+t",
+      "newWindow": "cmd+n",
+
+      "prevSidebarTab": "cmd+[",
+      "nextSidebarTab": "cmd+]",
+
+      "prevSurface": "cmd+shift+[",
+      "nextSurface": "cmd+shift+]",
+
+      "focusHistoryBack": "cmd+ctrl+[",
+      "focusHistoryForward": "cmd+ctrl+]",
+
+      "focusLeft": "alt+cmd+left",
+      "focusRight": "alt+cmd+right",
+      "focusUp": "alt+cmd+up",
+      "focusDown": "alt+cmd+down"
+    },
+
+    "when": {
+      "prevSidebarTab": "!browserFocus",
+      "nextSidebarTab": "!browserFocus"
+    }
+  }
+}

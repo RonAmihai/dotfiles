@@ -1,0 +1,44 @@
+# Termux packages that chezmoi installs with pkg, one per line. It never upgrades or removes them
+
+# Shell and dotfiles
+zsh
+chezmoi
+git
+openssh
+curl
+which
+jq
+
+# Termux
+termux-api
+termux-tools
+proot
+
+# Claude Code and .NET run through glibc-runner, which needs glibc-repo first
+glibc-repo
+glibc-runner
+getconf
+
+# Logins
+gh
+glab-cli
+
+# Prompt and command-line tools
+oh-my-posh
+fastfetch
+fzf
+zoxide
+eza
+bat
+ripgrep
+fd
+git-delta
+duf
+dust
+sd
+lazygit
+
+# The agent hooks, the Claude Code trust script, and the agent-reload build
+nodejs
+python
+golang

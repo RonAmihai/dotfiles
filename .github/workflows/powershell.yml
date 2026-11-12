@@ -1,0 +1,150 @@
+name: powershell
+
+# Runs only when a file that the PowerShell profile or the Windows app settings use changes, because two of its three legs run on the costly macOS and Windows runners
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.ps1'
+      - '**.ps1.tmpl'
+      - 'AppData/**'
+      - 'dot_config/cmd/**'
+      - 'dot_config/oh-my-posh/**'
+      - 'dot_config/powershell/**'
+      - 'dot_config/warp-terminal/**'
+      - 'dot_warp/**'
+      - '.chezmoitemplates/warp/**'
+      - '.chezmoitemplates/jetbrains-*'
+      - '.chezmoidata/**'
+      - '.chezmoiignore'
+      - '.chezmoiremove'
+      - '.chezmoi.toml.tmpl'
+      - 'tools/ci/fixtures/**'
+      - '.github/workflows/powershell.yml'
+  pull_request:
+    paths:
+      - '**.ps1'
+      - '**.ps1.tmpl'
+      - 'AppData/**'
+      - 'dot_config/cmd/**'
+      - 'dot_config/oh-my-posh/**'
+      - 'dot_config/powershell/**'
+      - 'dot_config/warp-terminal/**'
+      - 'dot_warp/**'
+      - '.chezmoitemplates/warp/**'
+      - '.chezmoitemplates/jetbrains-*'
+      - '.chezmoidata/**'
+      - '.chezmoiignore'
+      - '.chezmoiremove'
+      - '.chezmoi.toml.tmpl'
+      - 'tools/ci/fixtures/**'
+      - '.github/workflows/powershell.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run of the older one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  powershell:
+    name: PowerShell (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install chezmoi (Unix)
+        if: runner.os != 'Windows'
+        run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+      - name: Install chezmoi (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: iex "&{$(irm 'https://get.chezmoi.io/ps1')} -b '$env:USERPROFILE\bin'"
+      - name: Render and load the PowerShell Core profile in an empty home
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $renderedHome = Join-Path $env:RUNNER_TEMP 'powershell-home'
+          $config = Join-Path $env:RUNNER_TEMP 'chezmoi-powershell.toml'
+          New-Item -ItemType Directory -Force -Path $renderedHome | Out-Null
+          if ($IsWindows) {
+            $terminalPath = Join-Path $renderedHome 'AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json'
+            $powerToysPath = Join-Path $renderedHome 'AppData/Local/Microsoft/PowerToys/settings.json'
+            $keyboardPath = Join-Path $renderedHome 'AppData/Local/Microsoft/PowerToys/Keyboard Manager/default.json'
+            New-Item -ItemType Directory -Force -Path (Split-Path $terminalPath), (Split-Path $powerToysPath), (Split-Path $keyboardPath) | Out-Null
+            '{"localOnly":"terminal","profiles":{"list":[{"name":"Local profile"}]}}' | Set-Content -Encoding utf8 $terminalPath
+            '{"localOnly":"powertoys","enabled":{"FancyZones":false}}' | Set-Content -Encoding utf8 $powerToysPath
+            '{"localOnly":"keyboard","remapShortcuts":{"global":[{"originalKeys":"1;2","newRemapKeys":"3;4"}]}}' | Set-Content -Encoding utf8 $keyboardPath
+          }
+          "[data]`n    name = `"CI`"`n" | Set-Content -Encoding ascii $config
+          $cm = if ($IsWindows) { "$env:USERPROFILE\bin\chezmoi.exe" } else { "$HOME/.local/bin/chezmoi" }
+          & $cm --config $config --source $env:GITHUB_WORKSPACE --destination $renderedHome apply --exclude externals --no-tty --force
+          if ($LASTEXITCODE -ne 0) { throw 'chezmoi render failed' }
+          $entry = Join-Path $renderedHome '.config/powershell/Microsoft.PowerShell_profile.ps1'
+          . $entry
+          foreach ($command in 'Update-All', 'Clean-All') {
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "missing PowerShell command: $command" }
+          }
+          $theme = Get-Content -Raw (Join-Path $renderedHome '.config/oh-my-posh/cli-theme.omp.json')
+          foreach ($mapping in @('"re:([A-Za-z]:/Users/[^/]+)": "\uf17a"', '"re:(/mnt/[a-z]/Users/[^/]+)": "\uf17a"')) {
+            if (-not $theme.Contains($mapping)) { throw "missing Oh My Posh mapping: $mapping" }
+          }
+          if ($IsMacOS) {
+            $bindings = Get-Content -Raw (Join-Path $renderedHome '.warp/keybindings.yaml')
+            if ($bindings.Contains('alt-shift-[') -or $bindings.Contains('alt-shift-]')) { throw 'Linux and Windows Warp bindings reached macOS' }
+          } else {
+            $bindingPath = if ($IsWindows) { 'AppData/Local/warp/Warp/config/keybindings.yaml' } else { '.config/warp-terminal/keybindings.yaml' }
+            $bindings = Get-Content -Raw (Join-Path $renderedHome $bindingPath)
+            foreach ($binding in @('"workspace:activate_prev_tab": "alt-shift-["', '"workspace:activate_next_tab": "alt-shift-]"')) {
+              if (-not $bindings.Contains($binding)) { throw "missing Warp binding: $binding" }
+            }
+          }
+          if ($IsWindows) {
+            if (-not (Get-Command Install-DotfilesPackages -ErrorAction SilentlyContinue)) { throw 'missing Install-DotfilesPackages' }
+            Update-All -DryRun -SkipOSUpdates -SkipWSL -SkipDotfiles
+            $warpSettings = Get-Content -Raw (Join-Path $renderedHome 'AppData/Local/warp/Warp/config/settings.toml')
+            if (-not $warpSettings.Contains('startup_shell_override = "pwsh"')) { throw 'Warp does not start PowerShell' }
+            if ($warpSettings -notmatch '(?ms)\[global_hotkey\.toggle_all_windows\]\s+enabled = true\s+keybinding = "ctrl-alt-enter"') { throw 'Warp does not own Ctrl-Alt-Enter' }
+            $terminal = Get-Content -Raw $terminalPath | ConvertFrom-Json
+            $powerToys = Get-Content -Raw $powerToysPath | ConvertFrom-Json
+            $keyboard = Get-Content -Raw $keyboardPath | ConvertFrom-Json
+            if ($terminal.localOnly -ne 'terminal' -or $terminal.profiles.list[0].name -ne 'Local profile') { throw 'Windows Terminal local values were lost' }
+            if ($powerToys.localOnly -ne 'powertoys' -or -not $powerToys.enabled.FancyZones) { throw 'PowerToys local values or managed values are wrong' }
+            if ($keyboard.localOnly -ne 'keyboard' -or -not ($keyboard.remapShortcuts.global.originalKeys -contains '1;2')) { throw 'PowerToys Keyboard Manager local values were lost' }
+            if ($keyboard.remapShortcuts.global.originalKeys -contains '162;164;13') { throw 'PowerToys still intercepts Ctrl-Alt-Enter' }
+            $cmdProfile = Join-Path $renderedHome '.config/cmd/profile.cmd'
+            & cmd.exe /d /c "call `"$cmdProfile`""
+            if ($LASTEXITCODE -ne 0) { throw 'Cmd profile failed' }
+            $cmdProfileText = Get-Content -Raw $cmdProfile
+            foreach ($macro in 'doskey reload=', 'doskey ll=', 'doskey ua=') {
+              if (-not $cmdProfileText.Contains($macro)) { throw "missing Cmd macro: $macro" }
+            }
+          }
+      - name: Load the same profile with Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:RUNNER_TEMP\powershell-home\.config\powershell\Microsoft.PowerShell_profile.ps1"
+          Update-All -DryRun -SkipOSUpdates -SkipWSL -SkipDotfiles
+      - name: Parse, analyze and test the PowerShell scripts
+        shell: pwsh
+        run: |
+          $cm = if ($IsWindows) { "$env:USERPROFILE\bin\chezmoi.exe" } else { "$HOME/.local/bin/chezmoi" }
+          ./tools/ci/check-powershell.ps1 -Chezmoi $cm -Config (Join-Path $env:RUNNER_TEMP 'chezmoi-powershell.toml') `
+            -RenderedHome (Join-Path $env:RUNNER_TEMP 'powershell-home')
+      - name: Run the Windows JetBrains scripts on fake IDE folders
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tools/ci/check-jetbrains.ps1 -Chezmoi "$env:USERPROFILE\bin\chezmoi.exe" `
+            -Config (Join-Path $env:RUNNER_TEMP 'chezmoi-powershell.toml')

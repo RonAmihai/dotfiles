@@ -1,0 +1,24 @@
+name: termux-installers
+
+# The Termux setup scripts download each tool's latest release, so this job checks every week that they still install and run
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installers:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # As the Termux user directly, because the image's entrypoint clears the environment and would drop GH_TOKEN
+      - name: Install Claude Code, Codex and agy in Termux, then run each
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker run --rm --user 1000:1000 -e GH_TOKEN -v "$PWD:/src:ro" termux/termux-docker:aarch64 bash /src/tools/ci/termux-installers.sh

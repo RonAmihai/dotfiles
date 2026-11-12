@@ -1,0 +1,28 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Adds each shared MCP server and plugin that the file lacks; opencode owns the rest, and a removed entry stays */ -}}
+{{- $config := dict -}}
+{{- if .chezmoi.stdin | trim -}}
+{{-   $config = .chezmoi.stdin | fromJson -}}
+{{- end -}}
+{{- $mcp := get $config "mcp" | default (dict) -}}
+{{- $servers := get $mcp "servers" | default (dict) -}}
+{{- range $name, $url := includeTemplate "agent-mcp-servers" . | fromJson -}}
+{{-   if not (hasKey $servers $name) -}}
+{{-     $_ := set $servers $name (dict "type" "remote" "url" $url) -}}
+{{-   end -}}
+{{- end -}}
+{{- $_ := set $mcp "servers" $servers -}}
+{{- $_ := set $config "mcp" $mcp -}}
+{{- $plugins := get $config "plugins" | default (list) -}}
+{{- range .opencode_plugins -}}
+{{-   if not (has . $plugins) }}{{ $plugins = append $plugins . }}{{ end -}}
+{{- end -}}
+{{- $_ := set $config "plugins" $plugins -}}
+{{- /* The default agent may run anything without asking; these commands need a yes first */ -}}
+{{- $permissions := get $config "permissions" | default (list) -}}
+{{- range list "git commit *" "git push *" "rm -rf *" -}}
+{{-   $rule := dict "action" "shell" "resource" . "effect" "ask" -}}
+{{-   if not (has $rule $permissions) }}{{ $permissions = append $permissions $rule }}{{ end -}}
+{{- end -}}
+{{- $_ := set $config "permissions" $permissions -}}
+{{ $config | toPrettyJson }}

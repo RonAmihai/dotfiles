@@ -1,0 +1,16 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║                              ZSH Configuration                            ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+[[ -f ~/.personal.zsh ]] && source ~/.personal.zsh
+
+# One file per tool in ~/.config/shell/tools; env.sh, sourced by .personal.zsh, loaded them and ran their path and env phases
+_dotfiles_tools setup
+_dotfiles_tools late
+
+# Machine-local overrides (work config, etc.) — not managed by chezmoi
+[[ -f ~/.local.zsh ]] && source ~/.local.zsh
+
+# Last, because zsh expands aliases into the body of every function defined after them
+_dotfiles_tools aliases
+unset DOTFILES_PHASE

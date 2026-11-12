@@ -1,0 +1,16 @@
+# The personal ~/.gitconfig includes this file last, so the work identity wins in work repos
+# A relative path, because git reads it from this file's folder, and a work profile is not in ~
+{{- $gitVersion := "" }}
+{{- if lookPath "git" }}
+{{-   $gitVersion = output "git" "--version" | regexFind `[0-9]+\.[0-9]+(\.[0-9]+)?` }}
+{{- end }}
+{{- if and $gitVersion (semverCompare "<2.36.0" $gitVersion) }}
+# Git before 2.36 cannot match a remote URL, so every repo gets the work identity
+[include]
+	path = work-identity.gitconfig
+{{- else }}
+[includeIf "hasconfig:remote.*.url:https://github.com/example-org/**"]
+	path = work-identity.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github.com:example-org/**"]
+	path = work-identity.gitconfig
+{{- end }}

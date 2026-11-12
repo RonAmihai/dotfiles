@@ -1,0 +1,12 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+$manifestHash = '{{ include "dot_config/scoop/packages.json" | sha256sum }}'
+$installPackages = '{{ env "DOTFILES_INSTALL_PACKAGES" }}'
+if ($installPackages -eq '1') {
+    if (Get-Command scoop -ErrorAction SilentlyContinue) {
+        scoop import "$HOME\.config\scoop\packages.json"
+    }
+    else {
+        Write-Output 'Scoop is not installed; skipped its package manifest'
+    }
+}
+{{- end }}

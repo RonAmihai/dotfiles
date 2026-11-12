@@ -1,0 +1,14 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+Import-Module "$PSHOME\Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1" -Force
+$policies = @{}
+Get-ExecutionPolicy -List | ForEach-Object { $policies[$_.Scope.ToString()] = $_.ExecutionPolicy.ToString() }
+$persistentPolicy = @('MachinePolicy', 'UserPolicy', 'CurrentUser', 'LocalMachine') |
+    ForEach-Object { $policies[$_] } |
+    Where-Object { $_ -and $_ -ne 'Undefined' } |
+    Select-Object -First 1
+if (-not $persistentPolicy -or $persistentPolicy -eq 'Restricted') {
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue
+    $currentUserPolicy = (Get-ExecutionPolicy -List | Where-Object Scope -eq CurrentUser).ExecutionPolicy
+    if ($currentUserPolicy -ne 'RemoteSigned') { throw 'Could not set the CurrentUser execution policy to RemoteSigned' }
+}
+{{- end }}

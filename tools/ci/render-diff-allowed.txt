@@ -1,0 +1,1 @@
+# Rendered files that an open pull request changes on purpose on every system. Empty this list after its merge

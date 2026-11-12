@@ -1,0 +1,6 @@
+{{- /* Merges ~/.config/chezmoi/data.d/*.json, where a work dotfiles layer or this machine adds template data */ -}}
+{{- $extra := dict -}}
+{{- range glob (joinPath .chezmoi.destDir ".config/chezmoi/data.d/*.json") -}}
+{{-   $extra = mergeOverwrite $extra (include . | fromJson) -}}
+{{- end -}}
+{{- $extra | toJson -}}

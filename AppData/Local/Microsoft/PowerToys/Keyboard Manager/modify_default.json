@@ -1,0 +1,29 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $settings := `
+{
+  "remapKeys": { "inProcess": [] },
+  "remapKeysToText": { "inProcess": [] },
+  "remapShortcuts": { "global": [], "appSpecific": [] },
+  "remapShortcutsToText": { "global": [], "appSpecific": [] }
+}` | fromJson -}}
+{{- if .chezmoi.stdin | trim }}{{ $settings = .chezmoi.stdin | fromJson }}{{ end -}}
+{{- $remaps := get $settings "remapShortcuts" | default (dict) -}}
+{{- $global := get $remaps "global" | default (list) -}}
+{{- $managedKeys := list "162;81" "162;164;13" "91;164;37" "91;164;39" "91;164;40" "260;32" -}}
+{{- $kept := list -}}
+{{- range $global -}}
+{{-   if not (has (get . "originalKeys") $managedKeys) }}{{ $kept = append $kept . }}{{ end -}}
+{{- end -}}
+{{- $managed := `
+[
+  { "originalKeys": "162;81", "exactMatch": false, "operationType": 0, "newRemapKeys": "164;115" },
+  { "originalKeys": "91;164;37", "exactMatch": false, "newRemapKeys": "177" },
+  { "originalKeys": "91;164;39", "exactMatch": false, "newRemapKeys": "176" },
+  { "originalKeys": "91;164;40", "exactMatch": false, "newRemapKeys": "179" },
+  { "originalKeys": "260;32", "exactMatch": false, "operationType": 0, "newRemapKeys": "260;160;134" }
+]` | fromJson -}}
+{{- range $managed }}{{ $kept = append $kept . }}{{ end -}}
+{{- $_ := set $remaps "global" $kept -}}
+{{- if not (hasKey $remaps "appSpecific") }}{{ $_ = set $remaps "appSpecific" (list) }}{{ end -}}
+{{- $_ := set $settings "remapShortcuts" $remaps -}}
+{{ $settings | toPrettyJson }}

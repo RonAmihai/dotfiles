@@ -1,0 +1,12 @@
+{{ if and (ne .chezmoi.os "windows") (not (env "CI")) -}}
+{{- $servers := includeTemplate "jetbrains-mcp-servers" . | fromJson -}}
+#!/bin/sh
+# servers: {{ $servers | toJson }}
+set -u
+command -v claude >/dev/null 2>&1 || exit 0
+{{- range $name, $url := $servers }}
+if ! claude mcp get {{ $name }} >/dev/null 2>&1; then
+  claude mcp add --scope user --transport http {{ $name }} {{ $url }} >/dev/null || echo "jetbrains mcp: Claude Code did not add {{ $name }}" >&2
+fi
+{{- end }}
+{{ end -}}

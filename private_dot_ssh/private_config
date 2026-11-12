@@ -1,0 +1,8 @@
+# Drop-ins first (for example from a work dotfiles layer), because ssh keeps the first value it reads for each option
+Include ~/.ssh/config.d/*
+
+Host *
+    # UseKeychain exists only in the macOS ssh
+    IgnoreUnknown UseKeychain
+    AddKeysToAgent yes
+    UseKeychain yes

@@ -1,0 +1,51 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $settings := dict -}}
+{{- if .chezmoi.stdin | trim }}{{ $settings = .chezmoi.stdin | fromJson }}{{ end -}}
+{{- $enabled := get $settings "enabled" | default (dict) -}}
+{{- $managedEnabled := `
+{
+  "AdvancedPaste": false,
+  "AltWindowCycle": false,
+  "AlwaysOnTop": false,
+  "Awake": false,
+  "CmdNotFound": false,
+  "CmdPal": false,
+  "ColorPicker": false,
+  "CropAndLock": false,
+  "CursorWrap": false,
+  "EnvironmentVariables": false,
+  "FancyZones": true,
+  "File Explorer": true,
+  "File Locksmith": true,
+  "FindMyMouse": false,
+  "GrabAndMove": false,
+  "Hosts": false,
+  "Image Resizer": true,
+  "Keyboard Manager": true,
+  "LightSwitch": false,
+  "Measure Tool": false,
+  "MouseHighlighter": false,
+  "MouseJump": false,
+  "MousePointerCrosshairs": false,
+  "MouseWithoutBorders": false,
+  "NewPlus": false,
+  "Peek": false,
+  "PowerDisplay": false,
+  "PowerRename": true,
+  "PowerToys Run": false,
+  "QuickAccent": false,
+  "RegistryPreview": false,
+  "Shortcut Guide": false,
+  "TextExtractor": false,
+  "Workspaces": false,
+  "ZoomIt": false
+}` | fromJson -}}
+{{- $enabled = mergeOverwrite $enabled $managedEnabled -}}
+{{- $_ := set $settings "enabled" $enabled -}}
+{{- $_ := set $settings "startup" true -}}
+{{- $_ := set $settings "show_tray_icon" true -}}
+{{- $_ := set $settings "theme" "system" -}}
+{{- $_ := set $settings "download_updates_automatically" true -}}
+{{- $_ := set $settings "include_prerelease_updates" false -}}
+{{- $_ := set $settings "enable_experimentation" false -}}
+{{ $settings | toPrettyJson }}

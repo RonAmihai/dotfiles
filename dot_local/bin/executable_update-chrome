@@ -1,0 +1,36 @@
+#!/usr/bin/env zsh
+# Updates Google Chrome through its own updater (ksadmin), which is faster than reinstalling the Homebrew cask
+
+emulate -R zsh
+
+ksadmin=( {~,}/Library/{Google,Application\ Support/Google}/**/MacOS/ksadmin(N) )
+[[ -z "${ksadmin[1]}" ]] && { echo "  ksadmin not found"; exit 1; }
+ks="${ksadmin[1]}"
+
+current=$("$ks" --print-tickets --productid com.google.chrome 2>/dev/null \
+    | awk -F= '/^[[:space:]]+version=/ { print $2; exit }')
+
+# Skip if brew doesn't think Chrome is outdated (saves polling for nothing).
+if [[ -z "$(brew outdated --cask --greedy --quiet google-chrome 2>/dev/null)" ]]; then
+    printf '  Already at %s\n' "${current:-unknown}"
+    exit 0
+fi
+printf '  Updating from %s ...\n' "${current:-unknown}"
+
+"$ks" --install -P com.google.Chrome --system-store --user-initiated >/dev/null 2>&1 || {
+    echo "  ksadmin --install failed"; exit 1
+}
+
+# ksadmin returns before GoogleUpdater finishes; poll until the ticket advances.
+deadline=$((SECONDS + 180))
+while (( SECONDS < deadline )); do
+    sleep 3
+    latest=$("$ks" --print-tickets --productid com.google.chrome 2>/dev/null \
+        | awk -F= '/^[[:space:]]+version=/ { print $2; exit }')
+    [[ -n "$latest" && "$latest" != "$current" ]] && {
+        printf '  Updated to %s\n' "$latest"
+        exit 0
+    }
+done
+printf '  Timed out after 180s (still %s)\n' "${current:-unknown}"
+exit 1

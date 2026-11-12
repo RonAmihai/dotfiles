@@ -1,0 +1,90 @@
+#!/bin/sh
+# Stops a push that leaks a forbidden term, or that breaks the shells, a template or a package list
+repo=$(git rev-parse --show-toplevel)
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+failed=0
+zero=0000000000000000000000000000000000000000
+
+# Another dotfiles layer lists its forbidden terms, one extended regex per line, in ~/.config/chezmoi/forbidden-terms.d/
+cat "${XDG_CONFIG_HOME:-$HOME/.config}"/chezmoi/forbidden-terms.d/* 2>/dev/null | grep -v -e '^#' -e '^[[:space:]]*$' > "$tmp/patterns"
+
+changed=
+pushed=
+while read -r _ local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue
+    pushed=$local_sha
+    if [ "$remote_sha" = "$zero" ]; then
+        commits=$(git rev-list "$local_sha" --not --remotes)
+    else
+        commits=$(git rev-list "$remote_sha..$local_sha")
+    fi
+    for c in $commits; do
+        changed="$changed $(git show --name-only --format= "$c")"
+    done
+    [ -s "$tmp/patterns" ] || continue
+    files=$(git grep -I -i -E -l -f "$tmp/patterns" "$local_sha" 2>/dev/null)
+    if [ -n "$files" ]; then
+        echo "pre-push: $remote_ref has a forbidden term in these files:"
+        printf '%s\n' "$files" | sed "s/^$local_sha://; s/^/  /"
+        failed=1
+    fi
+    for c in $commits; do
+        if { git log -1 --format='%ae%n%ce%n%B' "$c"; git show --no-color --format= "$c" | grep '^+' | grep -v '^+++'; } \
+            | grep -q -i -E -f "$tmp/patterns"; then
+            echo "pre-push: commit $(git log -1 --format='%h %s' "$c") has a forbidden term in its author, message or added lines"
+            failed=1
+        fi
+    done
+done
+[ "$failed" = 0 ] || echo "pre-push: remove the term and rewrite those commits"
+[ -n "$pushed" ] || exit "$failed"
+
+# The checks read the pushed commit, not the working tree, which can hold unrelated edits
+mkdir -p "$tmp/src" "$tmp/home"
+git -C "$repo" archive "$pushed" | tar -x -C "$tmp/src"
+
+# Termux runs every check several times slower, and CI runs the shell check on Termux and the status line check on Linux
+termux=
+[ -x /data/data/com.termux/files/usr/bin/pkg ] && termux=1
+
+if [ -z "$termux" ] && ! bash "$tmp/src/tools/shell-check/fresh-home-check.sh" > "$tmp/shell.log" 2>&1; then
+    grep -v '^ok:' "$tmp/shell.log"
+    echo "pre-push: the shell check failed"
+    failed=1
+fi
+
+printf '[data]\n    name = "pre-push"\n' > "$tmp/chezmoi.toml"
+if ! chezmoi --source "$tmp/src" --config "$tmp/chezmoi.toml" --destination "$tmp/home" --persistent-state "$tmp/state.boltdb" \
+    apply --no-tty --force --exclude scripts,externals > "$tmp/apply.log" 2>&1; then
+    cat "$tmp/apply.log"
+    echo "pre-push: chezmoi cannot apply the repo to an empty HOME"
+    failed=1
+fi
+
+if ! { bash "$tmp/src/tools/ci/check-rendered-files.sh" "$tmp/home" &&
+    bash "$tmp/src/tools/ci/check-templates.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
+    bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
+    { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-statusline.sh"; }; } > "$tmp/ci.log" 2>&1; then
+    cat "$tmp/ci.log"
+    echo "pre-push: a check in tools/ci failed"
+    failed=1
+fi
+if command -v shellcheck >/dev/null 2>&1 && ! bash "$tmp/src/tools/ci/check-scripts.sh" > "$tmp/shellcheck.log" 2>&1; then
+    cat "$tmp/shellcheck.log"
+    echo "pre-push: shellcheck found a problem in a script"
+    failed=1
+fi
+
+# The package check asks Homebrew, GitHub and the App Store, so it runs only when a pushed commit changes a list
+case $changed in
+    *dot_config/homebrew/*|*dot_config/winget/*|*dot_config/scoop/*|*tools/package-check/*)
+        if ! bash "$tmp/src/tools/package-check/check-package-lists.sh" "$tmp/src/dot_config/homebrew/Brewfile" \
+            "$tmp/src/dot_config/winget/packages.json" "$tmp/src/dot_config/scoop/packages.json" > "$tmp/packages.log" 2>&1; then
+            grep -v '^ok:' "$tmp/packages.log"
+            echo "pre-push: a package list has a missing, deprecated or disabled entry"
+            failed=1
+        fi ;;
+esac
+
+exit "$failed"

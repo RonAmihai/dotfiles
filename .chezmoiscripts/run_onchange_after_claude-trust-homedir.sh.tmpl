@@ -1,0 +1,34 @@
+{{- if and (eq .chezmoi.os "android") (not (env "CI")) -}}
+#!/bin/sh
+# Disable Claude Code home directory trust verification dialog
+# Sets hasTrustDialogAccepted=true for home directory project entries in .claude.json
+
+CLAUDE_JSON="$HOME/.claude.json"
+
+if [ ! -f "$CLAUDE_JSON" ]; then
+    exit 0
+fi
+
+# Use python3 (available in Termux) to patch JSON reliably
+python3 -c "
+import json, sys
+
+path = '$CLAUDE_JSON'
+with open(path) as f:
+    data = json.load(f)
+
+changed = False
+for proj in data.get('projects', {}):
+    if data['projects'][proj].get('hasTrustDialogAccepted') == False:
+        data['projects'][proj]['hasTrustDialogAccepted'] = True
+        changed = True
+
+if changed:
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+        f.write('\n')
+    print(f'Updated hasTrustDialogAccepted in {path}')
+else:
+    print('hasTrustDialogAccepted already set')
+"
+{{ end -}}

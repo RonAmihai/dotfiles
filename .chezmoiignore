@@ -1,0 +1,127 @@
+README.md
+AGENTS.md
+CLAUDE.md
+
+# Claude permission grants stay local to each repo. Claude Code has no
+# user-level settings.local.json: the "local" scope is the current checkout,
+# so the curated allowlist lives in the tracked dot_claude/modify_settings.json.
+**/.claude/settings.local.json
+
+# Git worktrees
+.worktrees/
+
+# Go source that .chezmoiscripts builds into ~/.local/bin
+tools/
+
+# Icons: only sync the directory matching the current OS
+Icons-*/
+!Icons-{{ .chezmoi.os }}/
+{{ if not (stat (joinPath .chezmoi.sourceDir (printf "Icons-%s" .chezmoi.os))) }}
+Icons
+.local/bin/update-icons
+{{ end }}
+
+# macOS-only apps and launchers (they use `open -a`, osascript or cmux)
+{{ if ne .chezmoi.os "darwin" }}
+.config/cmux
+.local/bin/cmux-claude.sh
+.local/bin/install-x64-homebrew
+.local/bin/terminal-hotkey.sh
+.local/bin/update-chrome
+.config/shell/tools/macos.zsh
+.config/shell/tools/chrome.zsh
+{{ end }}
+
+# Termux (Android) only
+{{ if ne .chezmoi.os "android" }}
+scripts
+.local/bin/claude
+.local/bin/codex
+.local/bin/dotnet
+.local/bin/termux-chroot-exec
+.local/bin/termux-glibc-exec
+.shortcuts
+.termux
+.config/shell/tools/termux.sh
+.config/termux
+{{ end }}
+
+# Desktop apps that do not exist on Android
+{{ if eq .chezmoi.os "android" }}
+.config/ghostty
+.config/zed
+.jetbrains
+.local/bin/warp-claude.sh
+{{ end }}
+
+# nono needs Landlock, which the phone's kernel does not have
+{{ if eq .chezmoi.os "android" }}
+.config/nono
+.local/bin/nagy
+.local/bin/ncco
+.local/bin/nccr
+.local/bin/nclaude
+.local/bin/nclaude-acp
+.local/bin/ncodex
+.local/bin/ncodex-acp
+.local/bin/nopc
+.local/bin/nopencode-acp
+.local/bin/nopr
+{{ end }}
+
+# Docker Sandboxes need Docker, which Termux does not have
+{{ if eq .chezmoi.os "android" }}
+sbx-kits
+.local/bin/sccd
+.local/bin/sccl
+.local/bin/scco
+.local/bin/sccr
+.local/bin/sclaude
+.local/bin/scodex
+.local/bin/sopc
+{{ end }}
+
+# Termux has no PowerShell package, and it installs packages with pkg, not Homebrew
+{{ if eq .chezmoi.os "android" }}
+.config/powershell
+.config/homebrew
+{{ end }}
+
+# nono has no Windows build, so the IDE entry for the sandboxed ACP agent could not start
+{{ if eq .chezmoi.os "windows" }}
+.jetbrains/acp.json
+{{ end }}
+
+# The consent hook is a shell script, and Codex and agy on Windows have no shell to run it
+{{ if eq .chezmoi.os "windows" }}
+.codex/hooks.json
+.gemini/config/hooks.json
+{{ end }}
+
+# The work command is a bash script for macOS, Linux and Termux
+{{ if eq .chezmoi.os "windows" }}
+.local/bin/work
+{{ end }}
+
+# Package lists: Homebrew on macOS and Linux, winget on Windows
+{{ if eq .chezmoi.os "windows" }}
+.config/homebrew
+{{ else }}
+.config/winget
+.config/scoop
+.config/cmd
+.config/powershell/windows.ps1
+.config/powershell/windows
+.config/shell/tools/windows.sh
+{{ end }}
+
+# Warp reads its settings from a different folder on each system
+{{ if ne .chezmoi.os "darwin" }}
+.warp
+{{ end }}
+{{ if ne .chezmoi.os "linux" }}
+.config/warp-terminal
+{{ end }}
+{{ if ne .chezmoi.os "windows" }}
+AppData
+{{ end }}

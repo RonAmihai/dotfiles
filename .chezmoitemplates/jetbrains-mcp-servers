@@ -1,0 +1,6 @@
+{{- /* The MCP servers of the installed JetBrains IDEs as JSON, name to URL */ -}}
+{{- $servers := dict -}}
+{{- range $ide, $spec := includeTemplate "jetbrains-ides" . | fromJson -}}
+{{-   $_ := set $servers (printf "jetbrains-%s" $ide) (printf "http://127.0.0.1:%d/stream" (int $spec.port)) -}}
+{{- end -}}
+{{- $servers | toJson -}}

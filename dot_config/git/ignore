@@ -1,0 +1,4 @@
+**/.claude/settings.local.json
+
+# Git worktrees (inline within project dirs)
+.worktrees/

@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Runs a command through termux-chroot with every argument exactly as given, because termux-chroot runs sh -c "$*"
+# /usr/bin/pkg exists only inside the chroot, and a second proot there only costs start-up time
+[ -e /usr/bin/pkg ] && exec "$@"
+quoted=
+for arg in "$@"; do
+    quoted="$quoted '${arg//\'/\'\\\'\'}'"
+done
+exec termux-chroot "exec$quoted"

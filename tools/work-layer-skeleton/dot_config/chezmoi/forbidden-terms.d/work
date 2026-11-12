@@ -1,0 +1,4 @@
+# Terms that must never reach the personal dotfiles repo; its pre-push hook reads this folder.
+# One extended regex per line, for example the employer's name, its domains and its ticket keys:
+# employer-name
+# you@employer\.com

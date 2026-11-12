@@ -1,0 +1,21 @@
+{{- if and (or (eq .chezmoi.os "darwin") (eq .chezmoi.os "linux")) (not (env "CI")) -}}
+#!/bin/sh
+# Installs what the Brewfiles in ~/.config/homebrew list, and never upgrades or removes anything; Brewfile hashes:
+# {{ include "dot_config/homebrew/Brewfile" | sha256sum }}
+{{- range glob (joinPath .chezmoi.homeDir ".config/homebrew/*.Brewfile") }}
+# {{ include . | sha256sum }}
+{{- end }}
+brew=$(command -v brew)
+for candidate in /opt/homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew /usr/local/bin/brew; do
+    [ -z "$brew" ] && [ -x "$candidate" ] && brew=$candidate
+done
+if [ -z "$brew" ]; then
+    echo "Install Homebrew, then run chezmoi apply again, to get the tools in ~/.config/homebrew"
+    exit 0
+fi
+for file in "$HOME"/.config/homebrew/Brewfile "$HOME"/.config/homebrew/*.Brewfile; do
+    [ -f "$file" ] || continue
+    "$brew" bundle install --quiet --no-upgrade --file "$file" || echo "Homebrew could not install everything in $file. To retry, run: brew bundle install --file $file"
+done
+exit 0
+{{- end }}

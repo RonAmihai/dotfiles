@@ -1,0 +1,35 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║                        ~/.zshenv — every zsh, always                      ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+#
+# Sourced by EVERY zsh invocation, including non-interactive `zsh -c`. Keep it
+# tiny and side-effect-free — no PATH edits, no command substitutions. Anything
+# interactive belongs in .zshrc / .personal.zsh instead.
+
+# --- Alias expansion is an interactive-shell feature -------------------------
+#
+# Aliases exist so a human can type `ls` and get eza. A non-interactive shell is
+# either a script or an AI agent's tool call, and both expect real POSIX tools:
+# `sed -i`, `du -sh`, `df -h`, `ls -t` all fail outright under sd/dust/duf/eza.
+# POSIX sh already behaves this way — it expands aliases only when interactive.
+# This restores that behaviour for zsh.
+#
+# Why this line and not just an env-var check in .personal.zsh: agent CLIs
+# snapshot the interactive shell's aliases (Claude Code bakes ~80 literal
+# `alias --` lines into ~/.claude/shell-snapshots/) and replay them into a
+# non-interactive shell, without restoring alias *options*. So an
+# `[[ -o interactive ]]` test inside .personal.zsh is always true at capture
+# time and useless — but here, in a file re-read at replay time, it is
+# decisive. It needs no per-vendor env var, so it also covers agents that
+# expose no marker at all (Kimi CLI) and ones that do not exist yet.
+#
+# The AGENT_SHELL flag in .personal.zsh is still required: it gates functions
+# and shell options (zinit, oh-my-posh, zoxide's cd, restart/poweroff), and
+# `unsetopt aliases` does not touch those.
+[[ -o interactive ]] || unsetopt aliases
+
+# Drop-ins that must run before a terminal's own zsh integration, which loads after ~/.zshenv
+for _zshenv_dropin in ~/.config/zsh/zshenv.d/*.zsh(N); do
+    source "$_zshenv_dropin"
+done
+unset _zshenv_dropin

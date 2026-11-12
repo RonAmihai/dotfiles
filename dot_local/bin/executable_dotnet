@@ -1,0 +1,26 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Run dotnet via termux-glibc-exec, which uses termux-chroot only from outside the chroot
+# Chroot provides /tmp (needed by .NET mutex/NuGet) and standard Linux paths
+export DOTNET_GCHeapHardLimit=${DOTNET_GCHeapHardLimit:-1C0000000}
+export DOTNET_gcServer=${DOTNET_gcServer:-0}
+export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-1}
+export DOTNET_CLI_TELEMETRY_OPTOUT=${DOTNET_CLI_TELEMETRY_OPTOUT:-1}
+# Help vstest find the dotnet host under glibc-runner/proot
+export DOTNET_ROOT=${DOTNET_ROOT:-$HOME/.dotnet}
+
+# Patch vstest for proot compatibility: under proot the current process is the
+# proot loader, not dotnet, so vstest's architecture validation fails.
+# Fix: (1) IL-patch IsValidArchitectureMuxer to return true (one-time),
+#      (2) disable ReadyToRun so the runtime JITs from our patched IL.
+if [ "$1" = "test" ]; then
+    export DOTNET_ReadyToRun=0
+    if [ ! -f "$HOME/.dotnet/.vstest-patched" ]; then
+        _patcher="$HOME/scripts/patch-vstest/bin/Release/net10.0/patch-vstest.dll"
+        if [ -f "$_patcher" ]; then
+            echo "[dotnet wrapper] Patching vstest for proot compatibility..."
+            "$HOME/.local/bin/termux-glibc-exec" "$HOME/.dotnet/dotnet" exec "$_patcher" && touch "$HOME/.dotnet/.vstest-patched"
+        fi
+    fi
+fi
+
+exec "$HOME/.local/bin/termux-glibc-exec" "$HOME/.dotnet/dotnet" "$@"

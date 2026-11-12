@@ -1,0 +1,20 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Codex CLI wrapper for Termux
+# Runs the official standalone package (static musl, no glibc-runner needed) via
+# termux-chroot for /etc/resolv.conf (DNS), with Termux's CA bundle for TLS.
+CODEX_STANDALONE="$HOME/.codex/packages/standalone"
+# Codex's built-in updater runs the official install.sh: keep its visible-command
+# symlink out of ~/.local/bin (it would replace this wrapper), and keep that dir
+# on PATH so it doesn't append a PATH block to .bashrc.
+export CODEX_INSTALL_DIR="$CODEX_STANDALONE/bin"
+export PATH="$CODEX_INSTALL_DIR:/home/.local/bin:$HOME/.local/bin:$PATH"
+export SSL_CERT_FILE="${SSL_CERT_FILE:-/data/data/com.termux/files/usr/etc/tls/cert.pem}"
+# The shared app-server daemon can't run under termux-chroot: proot silently fails
+# to bind Unix sockets whose host path exceeds 108 bytes, and the daemon's socket
+# ($PREFIX/tmp/codex-daemon-$UID/<64-hex>) is always longer. Default to --no-daemon,
+# except for commands that manage or require the daemon.
+case "${1:-}" in
+    app-server|agents|remote-control) ;;
+    *) [[ " $* " == *" --remote"* ]] || set -- --no-daemon "$@" ;;
+esac
+exec "$HOME/.local/bin/termux-chroot-exec" "$CODEX_STANDALONE/current/bin/codex" "$@"

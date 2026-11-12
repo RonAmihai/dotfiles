@@ -1,0 +1,54 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $settings := dict -}}
+{{- if .chezmoi.stdin | trim }}{{ $settings = .chezmoi.stdin | fromJson }}{{ end -}}
+{{- $_ := set $settings "$schema" "https://aka.ms/terminal-profiles-schema" -}}
+{{- $_ := set $settings "copyFormatting" "none" -}}
+{{- $_ := set $settings "copyOnSelect" false -}}
+{{- $_ := set $settings "initialCols" 120 -}}
+{{- $_ := set $settings "showTabsInTitlebar" true -}}
+{{- $_ := set $settings "disabledProfileSources" (list "Windows.Terminal.Azure") -}}
+
+{{- $profiles := get $settings "profiles" | default (dict) -}}
+{{- $profileDefaults := get $profiles "defaults" | default (dict) -}}
+{{- $font := get $profileDefaults "font" | default (dict) -}}
+{{- $_ := set $font "face" "JetBrainsMono Nerd Font Mono" -}}
+{{- $_ := set $font "size" 13 -}}
+{{- $_ := set $profileDefaults "font" $font -}}
+{{- $_ := set $profileDefaults "startingDirectory" "%USERPROFILE%" -}}
+{{- $_ := set $profileDefaults "suppressApplicationTitle" true -}}
+{{- $_ := set $profiles "defaults" $profileDefaults -}}
+{{- if not (hasKey $profiles "list") }}{{ $_ = set $profiles "list" (list) }}{{ end -}}
+{{- $_ := set $settings "profiles" $profiles -}}
+
+{{- $managedIds := list "Dotfiles.NewTab" "Dotfiles.CloseTab" "Dotfiles.Copy" "Dotfiles.Paste" "Dotfiles.Find" -}}
+{{- $actions := list -}}
+{{- range get $settings "actions" | default (list) -}}
+{{-   if not (has (get . "id") $managedIds) }}{{ $actions = append $actions . }}{{ end -}}
+{{- end -}}
+{{- $managedActions := `
+[
+  { "command": { "action": "newTab" }, "id": "Dotfiles.NewTab" },
+  { "command": { "action": "closeTab" }, "id": "Dotfiles.CloseTab" },
+  { "command": { "action": "copy", "singleLine": false }, "id": "Dotfiles.Copy" },
+  { "command": "paste", "id": "Dotfiles.Paste" },
+  { "command": "find", "id": "Dotfiles.Find" }
+]` | fromJson -}}
+{{- range $managedActions }}{{ $actions = append $actions . }}{{ end -}}
+{{- $_ := set $settings "actions" $actions -}}
+
+{{- $managedKeys := list "ctrl+t" "ctrl+f4" "ctrl+c" "ctrl+v" "ctrl+shift+f" -}}
+{{- $keybindings := list -}}
+{{- range get $settings "keybindings" | default (list) -}}
+{{-   if not (has (get . "keys") $managedKeys) }}{{ $keybindings = append $keybindings . }}{{ end -}}
+{{- end -}}
+{{- $managedBindings := `
+[
+  { "keys": "ctrl+t", "id": "Dotfiles.NewTab" },
+  { "keys": "ctrl+f4", "id": "Dotfiles.CloseTab" },
+  { "keys": "ctrl+c", "id": "Dotfiles.Copy" },
+  { "keys": "ctrl+v", "id": "Dotfiles.Paste" },
+  { "keys": "ctrl+shift+f", "id": "Dotfiles.Find" }
+]` | fromJson -}}
+{{- range $managedBindings }}{{ $keybindings = append $keybindings . }}{{ end -}}
+{{- $_ := set $settings "keybindings" $keybindings -}}
+{{ $settings | toPrettyJson }}

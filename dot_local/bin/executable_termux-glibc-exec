@@ -1,0 +1,8 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Does what glibc-runner -n does, without splitting the arguments; the binary's interpreter resolves only inside the chroot
+[ -e /usr/bin/pkg ] || exec "${0%/*}/termux-chroot-exec" "$0" "$@"
+unset LD_PRELOAD
+export PATH="/usr/glibc/bin:$PATH"
+[ -f /usr/glibc/etc/locale.conf ] && . /usr/glibc/etc/locale.conf
+export RUNNING_IN_GLIBC_RUNNER=true
+exec "$@"

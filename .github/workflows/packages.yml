@@ -1,0 +1,40 @@
+name: packages
+
+# A package can be renamed, deprecated or removed upstream without notice, so this job checks the lists every week
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'dot_config/homebrew/**'
+      - 'dot_config/winget/**'
+      - 'dot_config/scoop/**'
+      - 'dot_config/termux/**'
+      - 'tools/package-check/**'
+      - '.github/workflows/packages.yml'
+  pull_request:
+    paths:
+      - 'dot_config/homebrew/**'
+      - 'dot_config/winget/**'
+      - 'dot_config/scoop/**'
+      - 'dot_config/termux/**'
+      - 'tools/package-check/**'
+      - '.github/workflows/packages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lists:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check that every package in the package lists exists and is not deprecated
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/package-check/check-package-lists.sh dot_config/homebrew/Brewfile dot_config/winget/packages.json dot_config/scoop/packages.json dot_config/termux/packages.txt

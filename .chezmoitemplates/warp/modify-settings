@@ -1,0 +1,23 @@
+{{- /*
+  Warp's settings sync owns the synced settings, so chezmoi writes the defaults only into a new
+  file and passes an existing file through. Forcing a synced setting would flip it on every
+  machine at each apply. Windows also gets the startup shell, a device setting that never syncs.
+  Called with .os and .stdin.
+*/ -}}
+{{- $settings := .stdin -}}
+{{- if not (trim $settings) -}}
+{{-   $settings = include ".chezmoitemplates/warp/settings.toml" -}}
+{{- /* cmux owns the terminal hotkey on macOS, and Warp owns it on Windows */ -}}
+{{-   if eq .os "windows" -}}
+{{-     $settings = regexReplaceAll `(?ms)(\[global_hotkey\.toggle_all_windows\]\nenabled = )false(\nkeybinding = )"ctrl-cmd-enter"` $settings `${1}true${2}"ctrl-alt-enter"` -}}
+{{-   end -}}
+{{- end -}}
+{{- if and (eq .os "windows") (not (regexMatch `(?m)^startup_shell_override\s*=` $settings)) -}}
+{{-   $shell := "startup_shell_override = \"pwsh\"\nnew_session_shell_override = { executable = \"pwsh.exe\" }" -}}
+{{-   if regexMatch `(?m)^\[session\]$` $settings -}}
+{{-     $settings = regexReplaceAll `(?m)^\[session\]$` $settings (printf "[session]\n%s" $shell) -}}
+{{-   else -}}
+{{-     $settings = printf "%s\n[session]\n%s\n" (regexReplaceAll "\\n+$" $settings "\n") $shell -}}
+{{-   end -}}
+{{- end -}}
+{{- $settings -}}

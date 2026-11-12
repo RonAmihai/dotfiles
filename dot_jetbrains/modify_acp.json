@@ -1,0 +1,12 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Adds Claude Code, Codex and opencode in the nono sandbox to JetBrains AI Assistant and keeps the agents that the IDE added */ -}}
+{{- $acp := dict -}}
+{{- if .chezmoi.stdin | trim -}}
+{{-   $acp = .chezmoi.stdin | fromJson -}}
+{{- end -}}
+{{- $servers := get $acp "agent_servers" | default (dict) -}}
+{{- $_ := set $servers "Claude Code (nono)" (dict "command" (joinPath .chezmoi.homeDir ".local/bin/nclaude-acp") "args" (list)) -}}
+{{- $_ := set $servers "Codex (nono)" (dict "command" (joinPath .chezmoi.homeDir ".local/bin/ncodex-acp") "args" (list)) -}}
+{{- $_ := set $servers "OpenCode (nono)" (dict "command" (joinPath .chezmoi.homeDir ".local/bin/nopencode-acp") "args" (list)) -}}
+{{- $_ := set $acp "agent_servers" $servers -}}
+{{ $acp | toPrettyJson }}

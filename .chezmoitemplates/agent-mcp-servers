@@ -1,0 +1,4 @@
+{{- /* The shared MCP servers as JSON: this repo's list, the ones in ~/.config/chezmoi/data.d/, then the installed JetBrains IDEs */ -}}
+{{- $extra := includeTemplate "extra-data" . | fromJson -}}
+{{- $jetbrains := includeTemplate "jetbrains-mcp-servers" . | fromJson -}}
+{{- mergeOverwrite (dict) (.agent_mcp_servers | default (dict)) (get $extra "agent_mcp_servers" | default (dict)) $jetbrains | toJson -}}

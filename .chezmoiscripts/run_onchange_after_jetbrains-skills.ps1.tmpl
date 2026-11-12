@@ -1,0 +1,28 @@
+{{ if eq .chezmoi.os "windows" -}}
+{{- $skills := includeTemplate "jetbrains-skills" . | fromJson -}}
+# skills: {{ $skills | toJson }}{{ range $skills }} {{ include (joinPath . "SKILL.md") | sha256sum | trunc 12 }}{{ end }}
+# Windows needs Developer Mode for links, so each skill is a copy with a marker file
+$skills = @{
+{{- range $name, $folder := $skills }}
+  {{ $name | squote }} = {{ $folder | squote }}
+{{- end }}
+}
+$homeDir = {{ .chezmoi.homeDir | squote }}
+foreach ($dir in (Join-Path $homeDir '.claude\skills'), (Join-Path $homeDir '.agents\skills')) {
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  foreach ($name in $skills.Keys) {
+    $target = Join-Path $dir $name
+    $marker = Join-Path $target '.jetbrains-skill'
+    if ((Test-Path $target) -and -not (Test-Path $marker)) {
+      Write-Warning "jetbrains skills: $target is not a JetBrains copy, so it stays"
+      continue
+    }
+    if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+    Copy-Item -Recurse -Path $skills[$name] -Destination $target
+    New-Item -ItemType File -Path $marker | Out-Null
+  }
+  Get-ChildItem -Path $dir -Directory |
+    Where-Object { (Test-Path (Join-Path $_.FullName '.jetbrains-skill')) -and -not $skills.ContainsKey($_.Name) } |
+    Remove-Item -Recurse -Force
+}
+{{ end -}}

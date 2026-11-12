@@ -1,0 +1,8 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Claude Code native binary wrapper for Termux
+# Runs via termux-glibc-exec (needed for glibc-linked ELF on Android/bionic)
+# Export chroot-relative PATH so Claude doesn't warn about ~/.local/bin missing
+export PATH="/home/.local/bin:$HOME/.local/bin:$PATH"
+# claude-setup.sh updates claude-native; the built-in updater fills ~/.local/share/claude/versions, which this wrapper never runs
+export DISABLE_AUTOUPDATER=1
+exec "$HOME/.local/bin/termux-glibc-exec" "$HOME/.local/share/claude/claude-native" "$@"

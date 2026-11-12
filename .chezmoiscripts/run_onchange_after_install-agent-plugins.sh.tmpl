@@ -1,0 +1,27 @@
+{{ if and (ne .chezmoi.os "windows") (not (env "CI")) -}}
+#!/bin/sh
+# plugins: {{ .codex_plugins | toJson }} {{ .agy_plugins | toJson }}
+set -u
+if command -v codex >/dev/null 2>&1; then
+  cache="${CODEX_HOME:-$HOME/.codex}/plugins/cache"
+{{- range .codex_plugins }}
+{{-   $name := index (splitList "@" .plugin) 0 }}
+{{-   $marketplace := index (splitList "@" .plugin) 1 }}
+  if [ ! -d "$cache/{{ $marketplace }}/{{ $name }}" ]; then
+{{-   with get . "marketplace" }}
+    codex plugin marketplace add {{ . }} >/dev/null 2>&1
+{{-   end }}
+    echo "agent plugins: installing {{ .plugin }} (this can take a minute)"
+    codex plugin add {{ .plugin }} >/dev/null || echo "agent plugins: Codex did not install {{ .plugin }}" >&2
+  fi
+{{- end }}
+fi
+if command -v agy >/dev/null 2>&1; then
+{{- range $name, $source := .agy_plugins }}
+  if [ ! -d "$HOME/.gemini/config/plugins/{{ $name }}" ]; then
+    echo "agent plugins: installing {{ $name }} (this can take a minute)"
+    agy plugin install {{ $source }} >/dev/null || echo "agent plugins: agy did not install {{ $name }}" >&2
+  fi
+{{- end }}
+fi
+{{ end -}}

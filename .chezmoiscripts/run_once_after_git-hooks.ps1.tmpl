@@ -1,0 +1,6 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Turns on the checks in .githooks for this repo's own clone
+if (Test-Path {{ joinPath .chezmoi.sourceDir ".git" | quote }}) {
+    git -C {{ .chezmoi.sourceDir | quote }} config core.hooksPath .githooks
+}
+{{- end }}

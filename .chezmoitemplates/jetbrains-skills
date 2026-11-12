@@ -1,0 +1,12 @@
+{{- /* The bundled skills of the installed JetBrains IDEs as JSON, <ide>-<skill> to the skill folder */ -}}
+{{- $skills := dict -}}
+{{- range $ide, $spec := includeTemplate "jetbrains-ides" . | fromJson -}}
+{{-   $resources := joinPath $spec.cacheDir "ai-agent-extensions" "bundledSkillsResources" -}}
+{{-   $prefix := printf "%s-" $ide -}}
+{{-   range concat (glob (joinPath $resources "*" "*" "SKILL.md")) (glob (joinPath $resources "*" "bundledSkills" "*" "SKILL.md")) -}}
+{{-     $folder := osDir . -}}
+{{-     $skill := osBase $folder -}}
+{{-     $_ := set $skills (ternary $skill (printf "%s%s" $prefix $skill) (hasPrefix $prefix $skill)) $folder -}}
+{{-   end -}}
+{{- end -}}
+{{- $skills | toJson -}}

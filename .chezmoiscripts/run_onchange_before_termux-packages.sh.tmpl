@@ -1,0 +1,22 @@
+{{- if and (eq .chezmoi.os "android") (not (env "CI")) -}}
+#!/bin/sh
+# Installs what dot_config/termux/packages.txt lists, and never upgrades or removes anything.
+# It runs before chezmoi writes files, so it carries the list itself, and it runs again when the list changes.
+names=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' -e '/^$/d' <<'EOF'
+{{ include "dot_config/termux/packages.txt" }}
+EOF
+)
+missing=
+for name in $names; do
+    dpkg -s "$name" >/dev/null 2>&1 || missing="$missing $name"
+done
+[ -n "$missing" ] || exit 0
+case " $missing " in
+    *" glibc-repo "*)
+        pkg install -y glibc-repo || echo "pkg could not install glibc-repo"
+        missing=$(printf '%s\n' $missing | grep -vx glibc-repo | tr '\n' ' ') ;;
+esac
+[ -n "${missing# }" ] || exit 0
+pkg install -y $missing || echo "pkg could not install everything. To retry, run: pkg install$missing"
+exit 0
+{{- end }}

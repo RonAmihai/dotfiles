@@ -1,0 +1,43 @@
+name: agent-reload
+
+# Runs only when the launcher changes, because two of its three legs run on the costly macOS and Windows runners
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/agent-reload/**'
+      - '.github/workflows/agent-reload.yml'
+  pull_request:
+    paths:
+      - 'tools/agent-reload/**'
+      - '.github/workflows/agent-reload.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run of the older one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  agent-reload:
+    name: agent-reload (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: tools/agent-reload/go.mod
+      - name: Vet and test the agent-reload launcher
+        run: |
+          go -C tools/agent-reload vet ./...
+          go -C tools/agent-reload test ./...

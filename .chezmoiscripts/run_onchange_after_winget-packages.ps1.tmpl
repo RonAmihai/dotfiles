@@ -1,0 +1,15 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+$manifestHash = '{{ include "dot_config/winget/packages.json" | sha256sum }}'
+$installPackages = '{{ env "DOTFILES_INSTALL_PACKAGES" }}'
+$file = "$HOME\.config\winget\packages.json"
+if ($installPackages -ne '1') { exit 0 }
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Output "Install winget (App Installer), then run chezmoi apply again, to get the tools in $file"
+    exit 0
+}
+winget import --import-file $file --no-upgrade --ignore-unavailable --accept-package-agreements --accept-source-agreements
+if ($LASTEXITCODE -ne 0) {
+    Write-Output "winget could not install everything in $file. To retry, run: winget import --import-file $file"
+}
+exit 0
+{{- end }}

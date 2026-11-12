@@ -1,0 +1,3 @@
+{{- /* The shared allowed commands as JSON: this repo's list, then the ones in ~/.config/chezmoi/data.d/ */ -}}
+{{- $extra := includeTemplate "extra-data" . | fromJson -}}
+{{- concat (.agent_allowed_commands | default (list)) (get $extra "agent_allowed_commands" | default (list)) | uniq | toJson -}}

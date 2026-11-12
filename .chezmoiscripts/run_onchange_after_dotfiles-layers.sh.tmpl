@@ -1,0 +1,34 @@
+{{- /* Each layer as [name, repo URL]: work_dotfiles_repo is the layer "work", then the name=URL pairs of dotfiles_layers */ -}}
+{{- $layers := list -}}
+{{- $named := dict -}}
+{{- range splitList " " (get . "dotfiles_layers" | default "") -}}
+{{-   if . -}}
+{{-     $name := regexReplaceAll "=.*$" . "" -}}
+{{-     $url := regexReplaceAll "^[^=]*=" . "" -}}
+{{-     if and (regexMatch "^[a-z][a-z0-9-]*$" $name) (ne $url .) $url -}}
+{{-       $layers = append $layers (list $name $url) -}}
+{{-       $_ := set $named $name true -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- with get . "work_dotfiles_repo" | default "" -}}
+{{-   if not (hasKey $named "work") }}{{ $layers = prepend $layers (list "work" .) }}{{ end -}}
+{{- end -}}
+{{- if and $layers (ne .chezmoi.os "windows") -}}
+#!/bin/sh
+# Clones and applies each dotfiles layer once; after that, its own chezmoi-<name> command updates it
+status=0
+add_layer() {
+    [ -d "$HOME/.local/share/chezmoi-$1" ] && return 0
+    if {{ .chezmoi.executable | quote }} init --apply --source "$HOME/.local/share/chezmoi-$1" --config "$HOME/.config/chezmoi-$1/chezmoi.toml" "$2"; then
+        echo "Applied the $1 dotfiles layer. Run chezmoi apply once more, so the templates here read its data."
+    else
+        echo "The $1 dotfiles layer did not apply" >&2
+        status=1
+    fi
+}
+{{- range $layers }}
+add_layer {{ index . 0 | quote }} {{ index . 1 | quote }}
+{{- end }}
+exit "$status"
+{{- end }}

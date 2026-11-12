@@ -1,0 +1,72 @@
+[user]
+	name = {{ .name | quote }}
+	email = ronamihai@outlook.com
+[alias]
+	co = checkout
+	s = status
+	d = diff -w
+	dc = diff --cached -w
+	ps = push origin
+	pl = pull origin $(git rev-parse --abbrev-ref HEAD)
+	b = branch
+	cp = cherry-pick
+	cc = commit -m \"More\"
+	rdev = reset --soft dev
+	dname = d dev --name-only
+	amend = commit --amend --no-edit
+	nb = checkout -b
+[init]
+	defaultBranch = main
+[color]
+	ui = auto
+[core]
+	autocrlf = input
+{{- if lookPath "delta" }}
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	side-by-side = true
+	line-numbers = true
+{{- end }}
+[merge]
+	conflictstyle = zdiff3
+[pull]
+	rebase = true
+[push]
+	autoSetupRemote = true
+[fetch]
+	prune = true
+[rerere]
+	enabled = true
+# Include machine-local overrides (GPG key, credentials)
+[include]
+	path = ~/.gitconfig.local
+{{- if and (eq .chezmoi.os "linux") (env "WSL_DISTRO_NAME") }}
+{{- with lookPath "git.exe" }}
+{{- $wslGcm := joinPath (dir (dir .)) "mingw64/bin/git-credential-manager.exe" }}
+{{- if stat $wslGcm }}
+[credential]
+	helper = {{ replace " " "\\ " $wslGcm | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if lookPath "gh" }}
+# GitHub over HTTPS asks the GitHub CLI after this machine's own helpers, so a new machine needs only gh auth login
+[credential "https://github.com"]
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = !gh auth git-credential
+{{- end }}
+{{- if and (eq .chezmoi.os "android") (lookPath "glab") }}
+# Only on Termux, because on other systems the insteadOf would move GitLab SSH remotes to HTTPS
+[credential "https://gitlab.com"]
+	helper =
+	helper = !glab auth git-credential
+[url "https://gitlab.com/"]
+	insteadOf = git@gitlab.com:
+{{- end }}
+# Optional work dotfiles layer; last, so its rules beat the local file
+[include]
+	path = ~/.config/git/work.gitconfig

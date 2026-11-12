@@ -1,0 +1,10 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Adds each shared MCP server that the file lacks; agy and you own the rest, including a server you disabled */ -}}
+{{- $config := dict -}}
+{{- if trim .chezmoi.stdin }}{{ $config = fromJson .chezmoi.stdin }}{{ end -}}
+{{- $servers := get $config "mcpServers" | default (dict) -}}
+{{- range $name, $url := includeTemplate "agent-mcp-servers" . | fromJson -}}
+{{-   if not (hasKey $servers $name) }}{{ $_ := set $servers $name (dict "serverUrl" $url "disabled" false) }}{{ end -}}
+{{- end -}}
+{{- $_ := set $config "mcpServers" $servers -}}
+{{ $config | toPrettyJson -}}

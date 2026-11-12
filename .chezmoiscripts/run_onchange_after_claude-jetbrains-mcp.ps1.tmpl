@@ -1,0 +1,13 @@
+{{ if eq .chezmoi.os "windows" -}}
+{{- $servers := includeTemplate "jetbrains-mcp-servers" . | fromJson -}}
+# servers: {{ $servers | toJson }}
+if (Get-Command claude -ErrorAction SilentlyContinue) {
+{{- range $name, $url := $servers }}
+  claude mcp get {{ $name }} *> $null
+  if ($LASTEXITCODE -ne 0) {
+    claude mcp add --scope user --transport http {{ $name }} {{ $url }} > $null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "jetbrains mcp: Claude Code did not add {{ $name }}" }
+  }
+{{- end }}
+}
+{{ end -}}

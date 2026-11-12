@@ -1,0 +1,28 @@
+{{ if and (ne .chezmoi.os "windows") (not (env "CI")) -}}
+{{- $skills := includeTemplate "jetbrains-skills" . | fromJson -}}
+#!/bin/sh
+# skills: {{ $skills | toJson }}
+set -u
+keep=" {{ keys $skills | sortAlpha | join " " }} "
+for dir in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
+  mkdir -p "$dir"
+{{- range $name, $folder := $skills }}
+  if [ -e "$dir/{{ $name }}" ] && [ ! -L "$dir/{{ $name }}" ]; then
+    echo "jetbrains skills: $dir/{{ $name }} is not a link, so it stays" >&2
+  else
+    ln -sfn {{ $folder | quote }} "$dir/{{ $name }}"
+  fi
+{{- end }}
+  for link in "$dir"/*; do
+    [ -L "$link" ] || continue
+    case "$(readlink "$link")" in
+      */ai-agent-extensions/bundledSkillsResources/*) ;;
+      *) continue ;;
+    esac
+    case "$keep" in
+      *" ${link##*/} "*) ;;
+      *) rm -f "$link" ;;
+    esac
+  done
+done
+{{ end -}}

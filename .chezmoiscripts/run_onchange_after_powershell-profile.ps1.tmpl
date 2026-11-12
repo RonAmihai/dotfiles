@@ -1,0 +1,23 @@
+{{- if and (eq .chezmoi.os "windows") (not (env "CI")) -}}
+# Resolve relocated Documents and write a BOM because Windows PowerShell 5.1 treats BOM-less UTF-8 as ANSI.
+$documents = [Environment]::GetFolderPath('MyDocuments')
+$managed = '. "$HOME\.config\powershell\Microsoft.PowerShell_profile.ps1"' + [Environment]::NewLine
+$encoding = New-Object Text.UTF8Encoding($true)
+$profiles = @(
+    (Join-Path $documents 'PowerShell\Microsoft.PowerShell_profile.ps1'),
+    (Join-Path $documents 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+)
+
+foreach ($profile in $profiles) {
+    $directory = Split-Path -Parent $profile
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    if (Test-Path -LiteralPath $profile) {
+        $current = [IO.File]::ReadAllText($profile)
+        if ($current -match '\.config[\\/]powershell[\\/]Microsoft\.PowerShell_profile\.ps1') { continue }
+        $backup = "$profile.pre-chezmoi.bak"
+        if (Test-Path -LiteralPath $backup) { $backup = "$profile.pre-chezmoi.$(Get-Date -Format yyyyMMddHHmmss).bak" }
+        Copy-Item -LiteralPath $profile -Destination $backup
+    }
+    [IO.File]::WriteAllText($profile, $managed, $encoding)
+}
+{{- end }}

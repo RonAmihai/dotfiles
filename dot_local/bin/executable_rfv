@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# rfv [query] - ripgrep results in fzf with a preview; Ctrl-T toggles fzf filtering, Enter opens the line in $VISUAL or $EDITOR
+set -euo pipefail
+
+for tool in rg fzf; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "rfv: needs $tool" >&2; exit 1; }
+done
+IFS=. read -r fzf_major fzf_minor _ <<<"$(fzf --version)"
+if (( fzf_major == 0 && fzf_minor < 46 )); then
+    echo "rfv: needs fzf 0.46 or later" >&2
+    exit 1
+fi
+
+preview='cat {1}'
+for bat in bat batcat; do
+    command -v "$bat" >/dev/null 2>&1 && { preview="$bat --color=always --highlight-line {2} {1}"; break; }
+done
+
+editor=${VISUAL:-${EDITOR:-vi}}
+editor=${editor%% *}
+case ${editor##*/} in
+    code|code-insiders|cursor|windsurf) open="$editor --goto {1}:{2}" ;;
+    rider|idea|goland|pycharm|webstorm|clion) open="$editor --line {2} {1}" ;;
+    hx|micro) open="$editor {1}:{2}" ;;
+    *) open="$editor +{2} {1}" ;;
+esac
+
+state=$(mktemp -d "${TMPDIR:-/tmp}/rfv.XXXXXX")
+trap 'rm -rf "$state"' EXIT
+: > "$state/r"
+: > "$state/f"
+search="rg --column --line-number --no-heading --color=always --smart-case"
+
+fzf --ansi --disabled --query "${*:-}" \
+    --bind "start:reload:$search -e {q} || true" \
+    --bind "change:reload:sleep 0.1; $search -e {q} || true" \
+    --bind "ctrl-t:transform:[[ ! \$FZF_PROMPT =~ ripgrep ]] &&
+        echo \"rebind(change)+change-prompt(1. ripgrep> )+disable-search+transform-query:echo \{q} > '$state/f'; cat '$state/r'\" ||
+        echo \"unbind(change)+change-prompt(2. fzf> )+enable-search+transform-query:echo \{q} > '$state/r'; cat '$state/f'\"" \
+    --color 'hl:-1:underline,hl+:-1:underline:reverse' \
+    --prompt '1. ripgrep> ' \
+    --delimiter : \
+    --header 'Ctrl-T: switch between ripgrep and fzf. Enter: open in the editor' \
+    --preview "$preview" \
+    --preview-window 'up,60%,border-bottom,+{2}+3/3,~3' \
+    --bind "enter:become($open)"

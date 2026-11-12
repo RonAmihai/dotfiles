@@ -1,0 +1,3 @@
+#!/bin/sh
+# chezmoi for the work dotfiles, with its own source and state next to the personal chezmoi
+exec chezmoi --source "$HOME/.local/share/chezmoi-work" --config "$HOME/.config/chezmoi-work/chezmoi.toml" "$@"

@@ -1,0 +1,87 @@
+{{- /*
+  The shared nono profile for every agent launcher: nclaude/ncco/nccr, ncodex and nagy. Each
+  ~/.config/nono/profiles/<agent>-local.json.tmpl calls this with .agent, .pack (the registry
+  profile it extends), .configDir and .signin (the agent's own sign-in origins). A pack that lacks
+  what the claude and codex packs grant passes .groups and .keychain too.
+  This template names no employer. A work layer adds its origins and grants through
+  ~/.config/chezmoi/data.d/*.json: nono_extra_signin_origins, nono_extra_fs_allow, nono_extra_fs_read.
+
+  Each toolchain grant is the narrowest one that let the tool run in the sandbox:
+    ~/.gitconfig.local, ~/.config/git  git reads its include and the global ignore file there.
+    gcm-core        git-credential-manager serves HTTPS credentials, so ~/.ssh stays denied.
+    GIT_CONFIG_*    rewrites SSH remotes to HTTPS inside the sandbox only.
+    GCM_GUI_PROMPT  the GCM window cannot open here, so a stale credential fails without a crash.
+    glab-cli, gh    the CLIs read their tokens there, and gh rewrites its config on a refresh.
+    dotnet          the SDK is read-only and the caches read-write. $HOME is not granted, so
+                    DOTNET_CLI_HOME must be set.
+    gpg             per-file grants plus the host gpg-agent socket, so private-keys-v1.d stays
+                    denied. Never grant ~/.gnupg with bypass_protection: deny does not override it.
+    ~/.npm          npm install fails without its cache.
+  The Docker socket, ~/.aws and ~/.kube are not here. The wrapper flags --docker, --aws and --k8s
+  grant them for one run, because each one reaches far outside the sandbox.
+
+  suppress_save_prompt stops nono from offering to grant the dotfiles repo, which PATH lookups probe.
+  network.open_port [0] keeps loopback open under --netlock, for --ide and local services.
+  rollback.exclude_patterns keep the caches under the 2 GiB rollback budget. Never exclude
+  .worktrees, because that turns rollback off in every worktree.
+  A literal double-star-slash glob in this comment would close the template comment early.
+*/ -}}
+{{- $extra    := includeTemplate "extra-data" . | fromJson }}
+{{- $xOrigins := get $extra "nono_extra_signin_origins" | default (list) }}
+{{- $xAllow   := get $extra "nono_extra_fs_allow"       | default (list) }}
+{{- $xRead    := get $extra "nono_extra_fs_read"        | default (list) -}}
+{{- $origins := concat .signin (list "https://github.com" "https://gitlab.com" "https://accounts.google.com") $xOrigins -}}
+{{- $fsAllow := concat (list "$HOME/.config/gh" "$HOME/.dotnet" "$HOME/.nuget" "$HOME/.aspnet" "$HOME/.local/share/NuGet" "$HOME/.npm") $xAllow -}}
+{{- /* ~/.config/agent-hooks holds the prompt hooks that every agent runs inside the sandbox */ -}}
+{{- $fsRead := concat (list "/usr/local/share/gcm-core" "/usr/local/share/dotnet" "$HOME/Library/Application Support/glab-cli" "$HOME/.config/git" "$HOME/.config/agent-hooks") $xRead -}}
+{{- $bypass := list "$HOME/.gnupg/pubring.kbx" "$HOME/.gnupg/gpg.conf" "$HOME/.gnupg/trustdb.gpg" "$HOME/.gnupg/S.gpg-agent" -}}
+{{- /* glab and gh keep their tokens in the login keychain */ -}}
+{{- if get . "keychain" -}}
+{{-   $keychain := dict "path" "$HOME/Library/Keychains" "when" "macos" -}}
+{{-   $fsAllow = append $fsAllow $keychain -}}
+{{-   $bypass = append $bypass $keychain -}}
+{{- end -}}
+{
+  "extends": "nolabs-ai/{{ .pack }}",
+  "meta": {
+    "name": "{{ .agent }}-local",
+    "version": "1.4.0",
+    "description": "Local override of the registry-managed '{{ .pack }}' pack profile. It inherits everything, adds browser sign-in (OAuth) origins, and adds the narrowest grants that let git, glab, gh, dotnet and npm run inside the sandbox. ~/.ssh stays denied, and the Docker socket, ~/.aws and ~/.kube stay denied unless a wrapper flag grants them for one run. A work layer adds its own origins and grants from local chezmoi data (nono_extra_signin_origins / nono_extra_fs_allow / nono_extra_fs_read). NOTE: open_urls REPLACES the base on extends (all origins re-listed); filesystem.* APPENDS. Requires the '{{ .pack }}' pack (`nono pull nolabs-ai/{{ .pack }}`).",
+    "author": "dotfiles"
+  },
+{{- with get . "groups" }}
+  "groups": {
+    "include": {{ . | toJson }}
+  },
+{{- end }}
+  "filesystem": {
+    "allow": {{ $fsAllow | toJson }},
+    "read": {{ $fsRead | toJson }},
+    "read_file": ["$HOME/.gitconfig.local", "$HOME/.gnupg/pubring.kbx", "$HOME/.gnupg/gpg.conf"],
+    "allow_file": ["$HOME/.gnupg/trustdb.gpg"],
+    "bypass_protection": {{ $bypass | toJson }},
+    "unix_socket": ["$HOME/.gnupg/S.gpg-agent"],
+    "suppress_save_prompt": ["$HOME/.local/share/chezmoi"]
+  },
+  "environment": {
+    "set_vars": {
+      "DOTNET_CLI_HOME": "$HOME/.dotnet",
+      "GCM_GUI_PROMPT": "0",
+      "GIT_CONFIG_COUNT": "2",
+      "GIT_CONFIG_KEY_0": "url.https://gitlab.com/.insteadOf",
+      "GIT_CONFIG_VALUE_0": "git@gitlab.com:",
+      "GIT_CONFIG_KEY_1": "url.https://github.com/.insteadOf",
+      "GIT_CONFIG_VALUE_1": "git@github.com:"
+    }
+  },
+  "network": {
+    "open_port": [0]
+  },
+  "rollback": {
+    "exclude_patterns": ["bin", "obj", "TestResults", ".nuget", ".npm", "NuGet", ".dotnet", "{{ .configDir }}", ".docker"]
+  },
+  "open_urls": {
+    "allow_origins": {{ $origins | toJson }},
+    "allow_localhost": true
+  }
+}

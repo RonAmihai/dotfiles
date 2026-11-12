@@ -1,0 +1,127 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* chezmoi sets these keys on every apply; permissions.allow only gains entries, so a work dotfiles layer can add its own */ -}}
+{{- $managed := `
+{
+  "permissions": {
+    "allow": [],
+    "defaultMode": "auto"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.local/bin/agent-statusline",
+    "padding": 0,
+    "refreshInterval": 1
+  },
+  "extraKnownMarketplaces": {
+    "dotnet-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "dotnet/skills"
+      }
+    },
+    "simple-english": {
+      "source": {
+        "source": "github",
+        "repo": "AminBlg/SimpleEnglish"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
+      }
+    }
+  },
+  "outputStyle": "simple-english:simple-english",
+  "tui": "fullscreen",
+  "editorMode": "normal",
+  "autoCompactEnabled": false,
+  "wheelScrollAccelerationEnabled": false
+}` | fromJson -}}
+{{- /* The allowed commands come from .chezmoidata/agents.yaml, which agy shares */ -}}
+{{- range includeTemplate "agent-allowed-commands" . | fromJson -}}
+{{-   $_ := set $managed.permissions "allow" (append $managed.permissions.allow (printf "Bash(%s)" .)) -}}
+{{- end -}}
+{{- /* Claude Code owns these keys; chezmoi writes them only when the file lacks them, as on a new machine */ -}}
+{{- $defaults := `
+{
+  "model": "opus",
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "dotnet@dotnet-agent-skills": true,
+    "dotnet-data@dotnet-agent-skills": true,
+    "nono@nolabs-ai": true,
+    "frontend-design@claude-plugins-official": true,
+    "simple-english@simple-english": true,
+    "warp@claude-code-warp": true
+  },
+  "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "xhigh"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
+  },
+  "autoCompactWindow": 1000000,
+  "skipDangerousModePermissionPrompt": true,
+  "remoteControlAtStartup": false,
+  "skipAutoPermissionPrompt": true
+}` | fromJson -}}
+{{- $settings := dict -}}
+{{- if .chezmoi.stdin | trim -}}
+{{-   $settings = .chezmoi.stdin | fromJson -}}
+{{- end -}}
+{{- range $key, $value := $defaults -}}
+{{-   if not (hasKey $settings $key) -}}
+{{-     $_ := set $settings $key $value -}}
+{{-   end -}}
+{{- end -}}
+{{- $retiredAllow := list -}}
+{{- range includeTemplate "agent-retired-commands" . | fromJson }}{{ $retiredAllow = append $retiredAllow (printf "Bash(%s)" .) }}{{ end -}}
+{{- $allow := list -}}
+{{- range get (get $settings "permissions" | default (dict)) "allow" | default (list) -}}
+{{-   if not (has . $retiredAllow) }}{{ $allow = append $allow . }}{{ end -}}
+{{- end -}}
+{{- range $managed.permissions.allow -}}
+{{-   if not (has . $allow) -}}
+{{-     $allow = append $allow . -}}
+{{-   end -}}
+{{- end -}}
+{{- $settings = mergeOverwrite $settings $managed -}}
+{{- $_ := set $settings.permissions "allow" $allow -}}
+{{- /* The shared git consent reminder runs before every prompt; other hooks in the file stay */ -}}
+{{- $reminder := "~/.config/agent-hooks/git-consent-reminder.sh" -}}
+{{- $retired := "~/.claude/hooks/git-consent-reminder.sh" -}}
+{{- $hooks := get $settings "hooks" | default (dict) -}}
+{{- $onPrompt := list -}}
+{{- $found := false -}}
+{{- range get $hooks "UserPromptSubmit" | default (list) -}}
+{{-   $kept := list -}}
+{{-   range get . "hooks" | default (list) -}}
+{{-     if ne (get . "command") $retired }}{{ $kept = append $kept . }}{{ end -}}
+{{-     if eq (get . "command") $reminder }}{{ $found = true }}{{ end -}}
+{{-   end -}}
+{{-   if $kept }}{{ $onPrompt = append $onPrompt (set . "hooks" $kept) }}{{ end -}}
+{{- end -}}
+{{- if not $found -}}
+{{-   $onPrompt = append $onPrompt (dict "hooks" (list (dict "type" "command" "command" $reminder))) -}}
+{{- end -}}
+{{- $_ := set $hooks "UserPromptSubmit" $onPrompt -}}
+{{- /* The visual plan hook packs the plan file into a page after each edit; other hooks stay */ -}}
+{{- $packer := "node ~/.config/agent-hooks/visual-plan-pack.mjs" -}}
+{{- $afterTool := get $hooks "PostToolUse" | default (list) -}}
+{{- $packerFound := false -}}
+{{- range $afterTool -}}
+{{-   range get . "hooks" | default (list) -}}
+{{-     if eq (get . "command") $packer }}{{ $packerFound = true }}{{ end -}}
+{{-   end -}}
+{{- end -}}
+{{- if not $packerFound -}}
+{{-   $afterTool = append $afterTool (dict "matcher" "Write|Edit" "hooks" (list (dict "type" "command" "command" $packer))) -}}
+{{- end -}}
+{{- $_ := set $hooks "PostToolUse" $afterTool -}}
+{{- $_ := set $settings "hooks" $hooks -}}
+{{ $settings | toPrettyJson }}

@@ -1,0 +1,17 @@
+{{ if eq .chezmoi.os "windows" -}}
+{{- $ides := includeTemplate "jetbrains-ides" . | fromJson -}}
+# ports:{{ range $ide, $spec := $ides }} {{ $spec.configDir }}={{ $spec.port }}{{ end }}
+function Set-McpPort($dir, $port) {
+  if (-not (Test-Path $dir)) { return }
+  $file = Join-Path $dir 'idea.properties'
+  $line = "idea.mcp.server.force.port=$port"
+  $lines = @(if (Test-Path $file) { Get-Content -Path $file })
+  if ($lines -contains $line) { return }
+  $lines = @($lines | Where-Object { $_ -notmatch '^idea\.mcp\.server\.force\.port=' }) + $line
+  [System.IO.File]::WriteAllLines($file, [string[]]$lines)
+  Write-Host "jetbrains ports: $file now asks for port $port. Restart the IDE to use it"
+}
+{{- range $ide, $spec := $ides }}
+Set-McpPort {{ $spec.configDir | squote }} {{ $spec.port }}
+{{- end }}
+{{ end -}}

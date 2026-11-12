@@ -1,0 +1,7 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* agy runs the shared git consent reminder before each model call; other named hooks, such as cmux's, stay */ -}}
+{{- $config := dict -}}
+{{- if trim .chezmoi.stdin }}{{ $config = fromJson .chezmoi.stdin }}{{ end -}}
+{{- $command := "\"$HOME/.config/agent-hooks/git-consent-reminder.sh\" agy" -}}
+{{- $_ := set $config "dotfiles-git-consent" (dict "PreInvocation" (list (dict "type" "command" "command" $command "timeout" 5))) -}}
+{{ $config | toPrettyJson -}}

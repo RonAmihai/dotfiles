@@ -1,0 +1,66 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Sets the approval mode, then appends each shared MCP server that the file lacks; Codex owns the rest, and a removed server stays */ -}}
+{{- $config := .chezmoi.stdin -}}
+{{- /* A nono pack appends a marked block at the end, where its developer_instructions fall into the last table; move the whole block above the first table, and drop any unmarked copy of its tables, so that nono replaces all of it on its next update */ -}}
+{{- $nonoTop := "" -}}
+{{- $nonoBlock := regexFind `(?s)# >>> nono:[^\n]*>>>\n.*?# <<< nono:[^\n]*<<<\n?` $config -}}
+{{- $instructions := regexFind `(?s)developer_instructions = """.*?"""` $nonoBlock -}}
+{{- if $instructions -}}
+{{-   $begin := regexFind `# >>> nono:[^\n]*>>>` $nonoBlock -}}
+{{-   $end := regexFind `# <<< nono:[^\n]*<<<` $nonoBlock -}}
+{{-   $tables := $nonoBlock | replace $begin "" | replace $instructions "" | replace $end "" | trim -}}
+{{-   $config = replace $nonoBlock "" $config -}}
+{{-   range regexFindAll `(?m)^\[[^\n]*\]\n(?:[^\[\n][^\n]*\n?)*` (printf "%s\n" $tables) -1 -}}
+{{-     $config = replace . "" $config -}}
+{{-   end -}}
+{{-   $nonoTop = printf "%s\n%s" $begin $instructions -}}
+{{-   if $tables }}{{ $nonoTop = printf "%s\n%s" $nonoTop $tables }}{{ end -}}
+{{-   $nonoTop = printf "%s\n%s" $nonoTop $end -}}
+{{- end -}}
+{{- /* Top-level keys must come before the first table, so they are set in the part above it */ -}}
+{{- $head := $config -}}
+{{- $tail := "" -}}
+{{- if hasPrefix "[" $config -}}
+{{-   $head = "" -}}
+{{-   $tail = $config -}}
+{{- else if contains "\n[" $config -}}
+{{-   $parts := splitn "\n[" 2 $config -}}
+{{-   $head = $parts._0 -}}
+{{-   $tail = printf "[%s" $parts._1 -}}
+{{- end -}}
+{{- $head = regexReplaceAll "\\n+$" $head "" -}}
+{{- /* Like Claude Code's auto mode: commands run without asking, and a reviewer model, not the user, answers each request for more access. Set on every apply */ -}}
+{{- /* Codex's sandbox cannot start on Android, and Codex then reports output for commands that never ran */ -}}
+{{- $sandbox := ternary "danger-full-access" "workspace-write" (eq .chezmoi.os "android") -}}
+{{- range $key, $value := dict "approval_policy" "on-request" "sandbox_mode" $sandbox "approvals_reviewer" "auto_review" -}}
+{{-   $line := printf "%s = %q" $key $value -}}
+{{-   if regexMatch (printf `(?m)^%s[ \t]*=` $key) $head -}}
+{{-     $head = regexReplaceAll (printf `(?m)^%s[ \t]*=.*$` $key) $head $line -}}
+{{-   else if $head -}}
+{{-     $head = printf "%s\n%s" $head $line -}}
+{{-   else -}}
+{{-     $head = $line -}}
+{{-   end -}}
+{{- end -}}
+{{- if $nonoTop }}{{ $head = printf "%s\n\n%s" $head $nonoTop }}{{ end -}}
+{{- $config = printf "%s\n" $head -}}
+{{- if $tail }}{{ $config = printf "%s\n%s" $config $tail }}{{ end -}}
+{{- /* The built-in items closest to agent-statusline; Codex runs no status line command. /statusline changes stay */ -}}
+{{- $statusLine := `status_line = ["model-with-reasoning", "context-used", "estimated-thread-cost", "five-hour-limit", "weekly-limit", "current-dir", "git-branch"]` -}}
+{{- if not (regexMatch `(?m)^status_line[ \t]*=` $config) -}}
+{{-   if regexMatch `(?m)^\[tui\][ \t]*$` $config -}}
+{{-     $config = regexReplaceAll `(?m)^\[tui\][ \t]*$` $config (printf "[tui]\n%s" $statusLine) -}}
+{{-   else -}}
+{{-     $config = regexReplaceAll "\\n+$" $config "" -}}
+{{-     if $config }}{{ $config = printf "%s\n\n" $config }}{{ end -}}
+{{-     $config = printf "%s[tui]\n%s\n" $config $statusLine -}}
+{{-   end -}}
+{{- end -}}
+{{- range $name, $url := includeTemplate "agent-mcp-servers" . | fromJson -}}
+{{-   if not (or (contains (printf "[mcp_servers.%s]" $name) $config) (contains (printf "[mcp_servers.%q]" $name) $config)) -}}
+{{-     $config = regexReplaceAll "\\n+$" $config "" -}}
+{{-     if $config }}{{ $config = printf "%s\n\n" $config }}{{ end -}}
+{{-     $config = printf "%s[mcp_servers.%s]\nurl = %q\n" $config $name $url -}}
+{{-   end -}}
+{{- end -}}
+{{- $config -}}

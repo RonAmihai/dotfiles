@@ -1,0 +1,11 @@
+{{- if and (eq .chezmoi.os "android") (not (env "CI")) -}}
+#!/bin/sh
+# The android branch's dotnet-setup.sh wrote this wrapper; chezmoi now manages it as ~/.local/bin/dotnet
+old="${PREFIX:-/data/data/com.termux/files/usr}/bin/dotnet"
+[ -f "$old" ] || exit 0
+if grep -qF 'glibc-runner -n "$HOME/.dotnet/dotnet"' "$old"; then
+    rm -f "$old"
+else
+    echo "$old is not the old dotnet wrapper, so it was kept. ~/.local/bin/dotnet comes first on PATH"
+fi
+{{ end -}}

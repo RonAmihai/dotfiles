@@ -1,0 +1,49 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Codex runs the shared git consent reminder before every prompt; other hooks in the file stay */ -}}
+{{- $config := dict -}}
+{{- if trim .chezmoi.stdin }}{{ $config = fromJson .chezmoi.stdin }}{{ end -}}
+{{- $reminder := "\"$HOME/.config/agent-hooks/git-consent-reminder.sh\"" -}}
+{{- $retired := "\"$HOME/.claude/hooks/git-consent-reminder.sh\"" -}}
+{{- $hooks := get $config "hooks" | default (dict) -}}
+{{- $onPrompt := list -}}
+{{- $found := false -}}
+{{- range get $hooks "UserPromptSubmit" | default (list) -}}
+{{-   $kept := list -}}
+{{-   range get . "hooks" | default (list) -}}
+{{-     if ne (get . "command") $retired }}{{ $kept = append $kept . }}{{ end -}}
+{{-     if eq (get . "command") $reminder }}{{ $found = true }}{{ end -}}
+{{-   end -}}
+{{-   if $kept }}{{ $onPrompt = append $onPrompt (set . "hooks" $kept) }}{{ end -}}
+{{- end -}}
+{{- if not $found -}}
+{{-   $onPrompt = append $onPrompt (dict "hooks" (list (dict "type" "command" "command" $reminder "timeout" 5))) -}}
+{{- end -}}
+{{- $_ := set $hooks "UserPromptSubmit" $onPrompt -}}
+{{- /* After the visual-plan pack command, a hook starts the response waiter, which the Codex sandbox blocks; other hooks stay */ -}}
+{{- $waiter := "node \"$HOME/.config/agent-hooks/visual-plan-codex.mjs\"" -}}
+{{- $afterTool := get $hooks "PostToolUse" | default (list) -}}
+{{- $waiterFound := false -}}
+{{- range $afterTool -}}
+{{-   range get . "hooks" | default (list) -}}
+{{-     if eq (get . "command") $waiter }}{{ $waiterFound = true }}{{ end -}}
+{{-   end -}}
+{{- end -}}
+{{- if not $waiterFound -}}
+{{-   $afterTool = append $afterTool (dict "hooks" (list (dict "type" "command" "command" $waiter "timeout" 10))) -}}
+{{- end -}}
+{{- $_ := set $hooks "PostToolUse" $afterTool -}}
+{{- /* Outside cmux, a Stop hook waits for the visual-plan response and returns it as the next prompt; other hooks stay */ -}}
+{{- $stopWaiter := "node \"$HOME/.config/agent-hooks/visual-plan-codex.mjs\" stop" -}}
+{{- $onStop := get $hooks "Stop" | default (list) -}}
+{{- $stopFound := false -}}
+{{- range $onStop -}}
+{{-   range get . "hooks" | default (list) -}}
+{{-     if eq (get . "command") $stopWaiter }}{{ $stopFound = true }}{{ end -}}
+{{-   end -}}
+{{- end -}}
+{{- if not $stopFound -}}
+{{-   $onStop = append $onStop (dict "hooks" (list (dict "type" "command" "command" $stopWaiter "timeout" 86400))) -}}
+{{- end -}}
+{{- $_ := set $hooks "Stop" $onStop -}}
+{{- $_ := set $config "hooks" $hooks -}}
+{{ $config | toPrettyJson -}}

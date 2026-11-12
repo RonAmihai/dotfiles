@@ -1,0 +1,40 @@
+{{- if and (or (eq .chezmoi.os "darwin") (eq .chezmoi.os "linux") (eq .chezmoi.os "android")) (not (env "CI")) -}}
+#!/bin/sh
+# Installs JetBrainsMono Nerd Font Mono, which the terminals and the oh-my-posh theme use, when it is missing
+font="JetBrainsMono Nerd Font Mono"
+{{- if eq .chezmoi.os "darwin" }}
+for f in ~/Library/Fonts/JetBrainsMonoNerdFontMono-* /Library/Fonts/JetBrainsMonoNerdFontMono-*; do
+    [ -e "$f" ] && exit 0
+done
+command -v brew >/dev/null 2>&1 && brew install --cask --quiet font-jetbrains-mono-nerd-font || echo "Install the font \"$font\" for the prompt glyphs"
+{{- else if eq .chezmoi.os "android" }}
+# Termux reads its one font from ~/.termux/font.ttf
+f="$HOME/.termux/font.ttf"
+[ -e "$f" ] && exit 0
+mkdir -p "$HOME/.termux" \
+    && curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz \
+        | tar -xJf - -O JetBrainsMonoNerdFontMono-Regular.ttf > "$f.part" \
+    && mv "$f.part" "$f" \
+    && termux-reload-settings \
+    || { rm -f "$f.part"; echo "Could not install the font \"$font\" into $f"; }
+{{- else }}
+# In WSL, the Windows terminal draws the text, so the font belongs in Windows
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    for f in /mnt/c/Windows/Fonts/JetBrainsMonoNerdFontMono-* /mnt/c/Users/*/AppData/Local/Microsoft/Windows/Fonts/JetBrainsMonoNerdFontMono-*; do
+        [ -e "$f" ] && exit 0
+    done
+    echo "Install the font \"$font\" in Windows: winget install DEVCOM.JetBrainsMonoNerdFont"
+    exit 0
+fi
+# Without fontconfig there is no desktop that could show the font
+command -v fc-list >/dev/null 2>&1 || exit 0
+fc-list | grep -q "$font" && exit 0
+dir="${XDG_DATA_HOME:-$HOME/.local/share}/fonts/JetBrainsMonoNerdFont"
+mkdir -p "$dir" \
+    && curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz \
+        | tar -xJf - -C "$dir" --wildcards 'JetBrainsMonoNerdFontMono-*' \
+    && fc-cache -f "$dir" >/dev/null \
+    || echo "Could not install the font \"$font\" into $dir"
+{{- end }}
+exit 0
+{{- end }}

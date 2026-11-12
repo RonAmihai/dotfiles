@@ -1,0 +1,2 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- includeTemplate "warp/modify-settings" (dict "os" .chezmoi.os "stdin" .chezmoi.stdin) -}}

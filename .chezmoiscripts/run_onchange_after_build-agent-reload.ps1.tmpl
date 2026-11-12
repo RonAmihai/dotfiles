@@ -1,0 +1,14 @@
+{{ if eq .chezmoi.os "windows" -}}
+# source hash: {{ range glob (joinPath .chezmoi.sourceDir "tools/agent-reload/*") }}{{ include . | sha256sum }} {{ end }}
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+  Write-Warning "agent-reload: Go is not installed, so claude-reload, codex-reload and agy-reload were not built"
+  exit 0
+}
+$bin = "$HOME\.local\bin"
+go build -C "{{ .chezmoi.sourceDir }}/tools/agent-reload" -o "$bin\agent-reload.exe" .
+# One program; the name it runs under picks the agent
+foreach ($agent in 'claude', 'codex', 'agy') {
+  Copy-Item -Force "$bin\agent-reload.exe" "$bin\$agent-reload.exe"
+}
+Remove-Item -Force "$bin\agent-reload.exe"
+{{ end -}}

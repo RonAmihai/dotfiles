@@ -1,0 +1,31 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Adds the work entries and keeps everything else; the personal dotfiles own the rest of this file */ -}}
+{{- $work := `
+{
+  "permissions": {
+    "allow": []
+  },
+  "extraKnownMarketplaces": {}
+}` | fromJson -}}
+{{- /* Claude Code owns plugins; this only enables one that the file does not list yet */ -}}
+{{- $plugins := list -}}
+{{- $settings := dict -}}
+{{- if .chezmoi.stdin | trim -}}
+{{-   $settings = .chezmoi.stdin | fromJson -}}
+{{- end -}}
+{{- $allow := get (get $settings "permissions" | default (dict)) "allow" | default (list) -}}
+{{- range $work.permissions.allow -}}
+{{-   if not (has . $allow) -}}
+{{-     $allow = append $allow . -}}
+{{-   end -}}
+{{- end -}}
+{{- $enabled := get $settings "enabledPlugins" | default (dict) -}}
+{{- range $plugins -}}
+{{-   if not (hasKey $enabled .) -}}
+{{-     $_ := set $enabled . true -}}
+{{-   end -}}
+{{- end -}}
+{{- $settings = mergeOverwrite $settings $work -}}
+{{- $_ := set $settings.permissions "allow" $allow -}}
+{{- $_ := set $settings "enabledPlugins" $enabled -}}
+{{ $settings | toPrettyJson }}

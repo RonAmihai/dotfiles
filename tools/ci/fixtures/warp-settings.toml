@@ -1,0 +1,9 @@
+[appearance]
+spacing = "compact"
+
+[global_hotkey.toggle_all_windows]
+enabled = true
+keybinding = "ctrl-alt-enter"
+
+[session]
+honor_ps1 = true
