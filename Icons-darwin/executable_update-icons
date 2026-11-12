@@ -1,7 +1,8 @@
 #!/bin/zsh
 # update-icons — Re-apply custom app icons after updates.
 #
-# Place custom icons in ~/Icons/ named as kebab-case of the app name:
+# Place custom icons in ~/Icons/, or let a dotfiles layer place them in ~/.local/share/app-icons/,
+# named as kebab-case of the app name:
 #   example-app.icns  →  Example App.app
 #
 # For edge cases, add overrides in ~/Icons/.mappings:
@@ -12,6 +13,7 @@
 set -eo pipefail
 
 ICONS_DIR="${ICONS_DIR:-$HOME/Icons}"
+LAYER_ICONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/app-icons"
 DATA_DIR="$ICONS_DIR/.data"
 MAPPINGS_FILE="$ICONS_DIR/.mappings"
 
@@ -33,7 +35,7 @@ for arg in "$@"; do
         --help|-h)
             print "Usage: update-icons [--force] [--dry-run] [--reset] [--restore]"
             print ""
-            print "Apply custom icons from $ICONS_DIR to matching macOS apps."
+            print "Apply custom icons from $ICONS_DIR and $LAYER_ICONS_DIR to matching macOS apps."
             print ""
             print "Options:"
             print "  --force     Apply custom icons without prompting"
@@ -237,7 +239,7 @@ main() {
     local applied=0 changed=0 skipped=0 not_found=0
     local dock_restart=false
 
-    for icon_file in "$ICONS_DIR"/*.icns(N) "$ICONS_DIR"/*.png(N); do
+    for icon_file in "$ICONS_DIR"/*.icns(N) "$ICONS_DIR"/*.png(N) "$LAYER_ICONS_DIR"/*.icns(N) "$LAYER_ICONS_DIR"/*.png(N); do
         local filename="${icon_file:t}"
         local stem="${filename%.*}"
 
