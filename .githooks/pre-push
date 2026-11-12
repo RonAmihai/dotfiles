@@ -45,6 +45,7 @@ mkdir -p "$tmp/src" "$tmp/home"
 git -C "$repo" archive "$pushed" | tar -x -C "$tmp/src"
 
 # Termux runs every check several times slower, and CI runs the shell check on Termux and the status line check on Linux
+# The JetBrains check expects the JetBrains rule, which the agent rules leave out on Android, where no JetBrains IDE runs
 termux=
 [ -x /data/data/com.termux/files/usr/bin/pkg ] && termux=1
 
@@ -64,7 +65,7 @@ fi
 
 if ! { bash "$tmp/src/tools/ci/check-rendered-files.sh" "$tmp/home" &&
     bash "$tmp/src/tools/ci/check-templates.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
-    bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
+    { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml"; } &&
     { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-statusline.sh"; }; } > "$tmp/ci.log" 2>&1; then
     cat "$tmp/ci.log"
     echo "pre-push: a check in tools/ci failed"
