@@ -12,8 +12,9 @@
     GIT_CONFIG_*    rewrites SSH remotes to HTTPS inside the sandbox only.
     GCM_GUI_PROMPT  the GCM window cannot open here, so a stale credential fails without a crash.
     glab-cli, gh    the CLIs read their tokens there, and gh rewrites its config on a refresh.
-    dotnet          the SDK is read-only and the caches read-write. $HOME is not granted, so
-                    DOTNET_CLI_HOME must be set.
+    dotnet          the SDKs and the global tools are read-only, so the sandbox cannot plant a
+                    tool that runs outside it later. $HOME is not granted, so DOTNET_CLI_HOME
+                    must be set. The CLI then writes only .dotnet, .nuget and .templateengine.
     gpg             per-file grants plus the host gpg-agent socket, so private-keys-v1.d stays
                     denied. Never grant ~/.gnupg with bypass_protection: deny does not override it.
     ~/.npm          npm install fails without its cache.
@@ -31,9 +32,9 @@
 {{- $xAllow   := get $extra "nono_extra_fs_allow"       | default (list) }}
 {{- $xRead    := get $extra "nono_extra_fs_read"        | default (list) -}}
 {{- $origins := concat .signin (list "https://github.com" "https://gitlab.com" "https://accounts.google.com") $xOrigins -}}
-{{- $fsAllow := concat (list "$HOME/.config/gh" "$HOME/.dotnet" "$HOME/.nuget" "$HOME/.aspnet" "$HOME/.local/share/NuGet" "$HOME/.npm") $xAllow -}}
+{{- $fsAllow := concat (list "$HOME/.config/gh" "$HOME/.dotnet/.dotnet" "$HOME/.dotnet/.nuget" "$HOME/.dotnet/.templateengine" "$HOME/.nuget" "$HOME/.aspnet" "$HOME/.local/share/NuGet" "$HOME/.npm") $xAllow -}}
 {{- /* ~/.config/agent-hooks holds the prompt hooks that every agent runs inside the sandbox */ -}}
-{{- $fsRead := concat (list "/usr/local/share/gcm-core" "/usr/local/share/dotnet" "$HOME/Library/Application Support/glab-cli" "$HOME/.config/git" "$HOME/.config/agent-hooks") $xRead -}}
+{{- $fsRead := concat (list "/usr/local/share/gcm-core" "/usr/local/share/dotnet" "$HOME/.dotnet" "$HOME/Library/Application Support/glab-cli" "$HOME/.config/git" "$HOME/.config/agent-hooks") $xRead -}}
 {{- $bypass := list "$HOME/.gnupg/pubring.kbx" "$HOME/.gnupg/gpg.conf" "$HOME/.gnupg/trustdb.gpg" "$HOME/.gnupg/S.gpg-agent" -}}
 {{- /* glab and gh keep their tokens in the login keychain */ -}}
 {{- if get . "keychain" -}}
@@ -45,7 +46,7 @@
   "extends": "nolabs-ai/{{ .pack }}",
   "meta": {
     "name": "{{ .agent }}-local",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "Local override of the registry-managed '{{ .pack }}' pack profile. It inherits everything, adds browser sign-in (OAuth) origins, and adds the narrowest grants that let git, glab, gh, dotnet and npm run inside the sandbox. ~/.ssh stays denied, and the Docker socket, ~/.aws and ~/.kube stay denied unless a wrapper flag grants them for one run. A work layer adds its own origins and grants from local chezmoi data (nono_extra_signin_origins / nono_extra_fs_allow / nono_extra_fs_read). NOTE: open_urls REPLACES the base on extends (all origins re-listed); filesystem.* APPENDS. Requires the '{{ .pack }}' pack (`nono pull nolabs-ai/{{ .pack }}`).",
     "author": "dotfiles"
   },

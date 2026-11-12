@@ -75,6 +75,45 @@ typeset -gA _nono_acp=(
   codex    'npx -y @agentclientprotocol/codex-acp@latest'
   opencode 'opencode acp'
 )
+# What a later agent session outside the sandbox runs or obeys, relative to $HOME. The agent's
+# sandbox can write all of it, so after each run the wrapper names what changed.
+typeset -gA _nono_watch=(
+  claude   '.claude/settings.json .claude/CLAUDE.md .claude/hooks .claude/commands .claude/skills .claude/agents .claude/plugins/cache'
+  codex    '.codex/config.toml .codex/hooks.json .codex/AGENTS.md .codex/rules .agents'
+  agy      '.gemini/antigravity-cli/settings.json .gemini/antigravity-cli/mcp'
+  opencode '.config/opencode/opencode.json .config/opencode/AGENTS.md .config/opencode/plugins .config/opencode/skills'
+)
+# The opencode pack also grants the Claude and Codex folders
+_nono_watch[opencode]+=" ${_nono_watch[claude]} ${_nono_watch[codex]}"
+
+_nono_claude_mcp() {
+  [[ -r "$HOME/.claude.json" ]] && (( $+commands[jq] )) || return 0
+  jq -cS '[.mcpServers, [.projects[]?.mcpServers]]' "$HOME/.claude.json" 2>/dev/null
+}
+
+# ctime, because the sandbox can set a file's mtime back but never its ctime
+_nono_report_changes() {
+  local agent="$1" since="$2" mcp_before="$3"
+  local -a paths=() changed=() parts=()
+  local p f
+  for p in ${=_nono_watch[$agent]}; do [[ -e "$HOME/$p" ]] && paths+=("$HOME/$p"); done
+  (( $#paths )) && for f in "${(@f)$(command find "${paths[@]}" -newerct "$since" \( -type f -o -type l \) \
+      ! -path '*/.in_use/*' ! -name .orphaned_at 2>/dev/null)}"; do
+    [[ -n "$f" ]] || continue
+    if [[ "$f" == "$HOME/.claude/plugins/cache/"*/*/*/* ]]; then
+      parts=(${(s:/:)${f#$HOME/.claude/plugins/cache/}})
+      f="$HOME/.claude/plugins/cache/${(j:/:)parts[1,3]}"
+    fi
+    changed+=("${f/#$HOME/~}")
+  done
+  [[ "$agent" == (claude|opencode) && "$(_nono_claude_mcp)" != "$mcp_before" ]] && changed+=("the MCP servers in ~/.claude.json")
+  changed=(${(u)changed})
+  (( $#changed )) || return 0
+  print -ru2 -- "n$agent: these changed while $agent ran in the sandbox, and a later session outside the sandbox runs or reads them:"
+  print -ru2 -l -- "  "${^changed[1,10]}
+  (( $#changed > 10 )) && print -ru2 -- "  and $(( $#changed - 10 )) more"
+  return 0
+}
 
 # Sandboxed agents via nono (OS-level Seatbelt sandbox; no Docker, no VM, no containers).
 # Each agent uses its chezmoi-managed `<agent>-local` profile (claude, codex, agy), rendered from the
@@ -200,7 +239,8 @@ WHAT WORKS INSIDE THE SANDBOX (${agent}-local, verified by running each tool)
                 gpg.conf, trustdb and connect() on the HOST gpg-agent socket — the
                 agent does the signing, so ~/.gnupg/private-keys-v1.d stays DENIED.
   glab, gh      read their tokens from their own config dirs.
-  dotnet        SDK read-only; ~/.dotnet ~/.nuget ~/.aspnet RW. Build + restore work.
+  dotnet        SDKs and global tools read-only; ~/.dotnet/.dotnet, ~/.nuget and
+                ~/.aspnet RW. Build, restore and global tools work.
   npm           ~/.npm RW (without it npm install fails outright).
   docker        only with --docker: the Docker Desktop socket and ~/.docker.
   MCP servers   remote HTTP+OAuth, creds in Keychain.
@@ -217,6 +257,11 @@ STILL DENIED (by design)
 KNOWN NOISE
   Every PATH-resolved exec logs one denied read of ~/.local/share/chezmoi. Nothing
   fails; the dotfiles repo is deliberately ungranted. Absolute-path exec is silent.
+
+AFTER EACH RUN
+  The wrapper lists the agent files that changed during the run and that a later
+  session outside the sandbox runs or reads: settings, hooks, instructions, skills,
+  plugins and MCP servers. A change that you did not make can be a planted hook.
 
 DIAGNOSING A DENIAL
   nono why --profile ${agent}-local --path <PATH> --op <read|write|readwrite>
@@ -272,6 +317,13 @@ ls "$HOME/.ssh" >/dev/null 2>&1 \
 glab auth status >/dev/null 2>&1 && ok glab   || bad glab
 gh   auth status >/dev/null 2>&1 && ok gh     || bad gh
 dotnet --version >/dev/null 2>&1 && ok dotnet "($(dotnet --version 2>/dev/null))" || bad dotnet
+if [ -d "$HOME/.dotnet/tools" ]; then
+  if touch "$HOME/.dotnet/tools/.nono-selftest" 2>/dev/null; then
+    rm -f "$HOME/.dotnet/tools/.nono-selftest"
+    bad dotnet-tools "WRITABLE - a planted tool would run outside the sandbox later"
+  else ok dotnet-tools "(read-only)"
+  fi
+fi
 npm  ping >/dev/null 2>&1 && ok npm || bad npm "(registry unreachable)"
 if [ "$NONO_SELFTEST_DOCKER" = 1 ]; then
   docker ps >/dev/null 2>&1 && ok docker || bad docker "(is Docker Desktop running?)"
@@ -418,6 +470,11 @@ _nono_agent_impl() {
     nono run --profile "$profile" --allow-cwd "${grants[@]}" -- /usr/bin/true
     return $?
   fi
+  # One second back, because find compares whole seconds
+  local since mcp_before rc
+  zmodload zsh/datetime
+  strftime -s since '%Y-%m-%d %H:%M:%S' $(( EPOCHSECONDS - 1 ))
+  [[ "$agent" == (claude|opencode) ]] && mcp_before=$(_nono_claude_mcp)
   if (( acp )); then
     if [[ -z "${_nono_acp[$agent]}" ]]; then
       print -ru2 -- "n$agent: $agent has no ACP adapter"
@@ -430,10 +487,14 @@ _nono_agent_impl() {
     fi
     nono run --profile "$profile" --allow-cwd --silent --startup-timeout 0 "${grants[@]}" \
       -- ${=_nono_acp[$agent]}
-    return $?
+    rc=$?
+  else
+    nono run --profile "$profile" --allow-cwd "${grants[@]}" \
+      -- "$agent" ${=perm_flag} ${=extra_flags} "$@"
+    rc=$?
   fi
-  nono run --profile "$profile" --allow-cwd "${grants[@]}" \
-    -- "$agent" ${=perm_flag} ${=extra_flags} "$@"
+  _nono_report_changes "$agent" "$since" "$mcp_before"
+  return $rc
 }
 
 nclaude() { _nono_agent_impl claude ""               "$@"; }
