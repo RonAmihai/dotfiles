@@ -8,9 +8,10 @@ shift
 termux=
 [ -x /data/data/com.termux/files/usr/bin/pkg ] && termux=1
 if [ $# -eq 0 ]; then
-    set -- session_env work_identity forbidden_terms personal_kept work_tools no_leak stale_warning refuses_with_work_layer
+    set -- session_env work_identity forbidden_terms personal_kept work_tools no_leak stale_warning refuses_with_work_layer agents_no_leak
     [ -n "$termux" ] && set -- "$@" clean_keeps_live
 fi
+real_home=$HOME
 skeleton=$repo/tools/work-layer-skeleton
 chezmoi_bin=${CHEZMOI:-$(command -v chezmoi)}
 zsh_bin=$(command -v zsh)
@@ -150,6 +151,55 @@ check_refuses_with_work_layer() {
         ok "refuses_with_work_layer: a machine with the work layer installed keeps it, with no session"
     else
         fail "refuses_with_work_layer: work did not refuse: $out"
+    fi
+}
+
+# Runs each installed agent once in a session, without a login, so a file that an agent writes outside its profile shows up
+check_agents_no_leak() {
+    local agents='' agent real leaks
+    if [ -n "$termux" ] && [ ! -x /usr/bin/pkg ]; then
+        echo "skip: agents_no_leak runs inside termux-chroot, because outside it termux-chroot gives the agents the real HOME"
+        return
+    fi
+    mkdir -p "$home/.local/bin"
+    if [ -n "$termux" ]; then
+        if [ -x "$real_home/.local/share/claude/claude-native" ]; then
+            mkdir -p "$home/.local/share/claude"
+            ln -sf "$real_home/.local/share/claude/claude-native" "$home/.local/share/claude/claude-native"
+            agents="$agents claude"
+        fi
+        if [ -d "$real_home/.codex/packages/standalone/current" ]; then
+            mkdir -p "$home/.codex/packages/standalone"
+            ln -sfn "$(cd "$real_home/.codex/packages/standalone/current" && pwd -P)" "$home/.codex/packages/standalone/current"
+            agents="$agents codex"
+        fi
+        [ -x "$real_home/.local/bin/agy" ] && ln -sf "$real_home/.local/bin/agy" "$home/.local/bin/agy" && agents="$agents agy"
+    else
+        for agent in claude codex agy; do
+            real=$(command -v "$agent") || continue
+            ln -sf "$(realpath "$real")" "$home/.local/bin/$agent" && agents="$agents $agent"
+        done
+    fi
+    if [ -z "$agents" ]; then
+        echo "skip: agents_no_leak needs Claude Code, Codex or agy, and none is installed"
+        return
+    fi
+    mv "$fakes/agy" "$fakes/agy.off"
+    touch "$scratch/agents-before"
+    sleep 1
+    work -c "for agent in $agents; do
+        case \$agent in
+            claude) timeout 60 claude -p 'Reply with ok' ;;
+            codex) timeout 30 codex exec --skip-git-repo-check 'Reply with ok' ;;
+            agy) timeout 20 agy -p 'Reply with ok' ;;
+        esac
+    done" >/dev/null 2>&1
+    mv "$fakes/agy.off" "$fakes/agy"
+    leaks=$(find "$home" \( -type f -o -type l \) -newer "$scratch/agents-before" -print)
+    if [ -n "$leaks" ]; then
+        fail "agents_no_leak: in a session,$agents wrote to the home folder: $(printf '%s\n' "$leaks" | head -n 20 | tr '\n' ' ')"
+    else
+        ok "agents_no_leak:$agents wrote nothing to the home folder in a session"
     fi
 }
 
