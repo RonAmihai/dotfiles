@@ -42,6 +42,17 @@
 {{-     $head = $line -}}
 {{-   end -}}
 {{- end -}}
+{{- /* On Termux, update-all updates Codex with codex-setup.sh, and Codex's own update would run its generic Linux installer */ -}}
+{{- if eq .chezmoi.os "android" -}}
+{{-   $line := "check_for_update_on_startup = false" -}}
+{{-   if regexMatch `(?m)^check_for_update_on_startup[ \t]*=` $head -}}
+{{-     $head = regexReplaceAll `(?m)^check_for_update_on_startup[ \t]*=.*$` $head $line -}}
+{{-   else if $head -}}
+{{-     $head = printf "%s\n%s" $head $line -}}
+{{-   else -}}
+{{-     $head = $line -}}
+{{-   end -}}
+{{- end -}}
 {{- if $nonoTop }}{{ $head = printf "%s\n\n%s" $head $nonoTop }}{{ end -}}
 {{- $config = printf "%s\n" $head -}}
 {{- if $tail }}{{ $config = printf "%s\n%s" $config $tail }}{{ end -}}

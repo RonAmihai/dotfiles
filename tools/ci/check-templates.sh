@@ -24,12 +24,13 @@ render_twice() {
 # The sandbox depends on the OS, so both renders name one, and the result is the same on every machine that runs this
 render_twice dot_codex/modify_private_config.toml "$fixtures/codex-config.toml" codex '{"chezmoi":{"os":"linux"}}'
 render_twice dot_codex/modify_private_config.toml "$fixtures/codex-config.toml" codex-android '{"chezmoi":{"os":"android"}}'
-python3 - "$tmp/codex-android.once" <<'PY' || fail "dot_codex/modify_private_config.toml did not turn off the sandbox on Android"
+python3 - "$tmp/codex-android.once" <<'PY' || fail "dot_codex/modify_private_config.toml did not turn off the sandbox and the update check on Android"
 import sys, tomllib
 config = tomllib.load(open(sys.argv[1], "rb"))
 assert config["sandbox_mode"] == "danger-full-access"
 assert config["approval_policy"] == "on-request"
 assert config["approvals_reviewer"] == "auto_review"
+assert config["check_for_update_on_startup"] is False
 PY
 python3 - "$tmp/codex.once" <<'PY' || fail "dot_codex/modify_private_config.toml rendered a wrong config.toml"
 import sys, tomllib
@@ -38,6 +39,7 @@ assert config["model"] == "sample-model"
 assert config["approval_policy"] == "on-request"
 assert config["sandbox_mode"] == "workspace-write"
 assert config["approvals_reviewer"] == "auto_review"
+assert "check_for_update_on_startup" not in config
 assert config["developer_instructions"].strip() == "Sample sandbox instructions."
 assert "developer_instructions" not in config["mcp_servers"]["sample"]
 assert "context7" in config["mcp_servers"]
