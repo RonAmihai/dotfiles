@@ -10,6 +10,8 @@ if [ -n "${ZSH_VERSION:-}" ]; then
 else
     alias reload='unset _BASHRC_LOADED; . ~/.bashrc'
 fi
+# A reload runs this file again, and the shell expands an old alias while it parses the function definitions below
+unalias poweroff restart 2>/dev/null
 case ${OSTYPE:-} in
     msys*|cygwin*|MINGW*) ;;
     *)
