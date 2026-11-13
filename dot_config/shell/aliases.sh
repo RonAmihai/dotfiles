@@ -5,12 +5,13 @@
 alias cls='clear'
 alias rr='refresh'
 alias refresh='reload'
+# A new shell, because reading the config again wraps the zle widgets a second time, and the first keypress then recurses until zsh crashes
 if [ -n "${ZSH_VERSION:-}" ]; then
-    alias reload='source ~/.zshrc'
+    alias reload='exec zsh'
 else
-    alias reload='unset _BASHRC_LOADED; . ~/.bashrc'
+    alias reload='exec bash'
 fi
-# A reload runs this file again, and the shell expands an old alias while it parses the function definitions below
+# A second read of this file, such as source ~/.zshrc, expands an old alias while it parses the function definitions below
 unalias poweroff restart 2>/dev/null
 case ${OSTYPE:-} in
     msys*|cygwin*|MINGW*) ;;
