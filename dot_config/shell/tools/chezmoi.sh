@@ -10,7 +10,7 @@ aliases)
         for layer in "$HOME"/.local/bin/chezmoi-*; do
             [ -x "$layer" ] || continue
             echo "== ${layer##*/}"
-            "$layer" "$subcommand" || return
+            "$layer" "$subcommand" "$@" || return
         done
         echo "== chezmoi"
         chezmoi "$subcommand" "$@"
