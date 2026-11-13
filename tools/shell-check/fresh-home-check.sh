@@ -89,6 +89,24 @@ check() {
     fi
 }
 
+# A terminal runs what -c cannot: the key handlers, deferred plugins, a second read of the config after an apply, and reload
+python_bin=$(command -v python3)
+pty_check() {
+    local label=$1 out
+    shift
+    if [ -z "$python_bin" ]; then
+        echo "skip: no python3, so the $label shell gets no terminal check"
+        return
+    fi
+    if out=$(cd "$home" && env -i HOME="$home" $login_env "$python_bin" "$repo/tools/shell-check/pty-check.py" "$@" 2>&1); then
+        echo "ok: the $label shell takes typing, a second read of its config and reload in a terminal"
+    else
+        echo "FAIL: the $label shell broke in a terminal:"
+        echo "$out" | tail -n 15
+        failed=1
+    fi
+}
+
 # Writes to files, because startup files in /etc can print to the terminal (Fedora's zlogout runs clear)
 probe='for v in AGENT_SHELL LC_ALL LC_CTYPE EDITOR VISUAL HOMEBREW_PREFIX HOMEBREW_REPOSITORY FZF_DEFAULT_COMMAND FZF_ALT_C_COMMAND PATH; do eval "echo \"$v=\${$v:-}\""; done > "$PROBE_OUT/values"; alias > "$PROBE_OUT/aliases"; { command -v oh-my-posh || echo; echo "${POSH_CONFIG:-}"; } > "$PROBE_OUT/prompt"'
 
@@ -160,6 +178,7 @@ for mode in human agent; do
         if [ $mode = human ]; then
             check "zsh human (late completion setup)" "$zsh_bin" -il -c \
                 'autoload -Uz compinit && compinit -u -d "$HOME/.zcompdump-check" && _dotfiles_after_compinit'
+            pty_check "zsh" "$zsh_bin"
         fi
         dump "$scratch/zsh-$mode" "$home" $marker "$zsh_bin"
         prompt_check "zsh $mode" "$scratch/zsh-$mode" "$([ $mode = human ] && echo theme)"
@@ -167,6 +186,7 @@ for mode in human agent; do
     for b in $bash_bins; do
         version=$(bash_version "$b")
         check "bash $version $mode" $marker "$b" -il -c true
+        [ $mode = human ] && pty_check "bash $version" "$b"
         dump "$scratch/bash-$version-$mode" "$home" $marker "$b"
         case $mode-$version in
             human-3.*|human-4.[01]) prompt_check "bash $version $mode" "$scratch/bash-$version-$mode" none ;;

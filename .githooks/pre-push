@@ -63,6 +63,15 @@ if ! chezmoi --source "$tmp/src" --config "$tmp/chezmoi.toml" --destination "$tm
     failed=1
 fi
 
+# On Termux, the terminal check of zsh stands in for the skipped shell check, because it catches a broken prompt or reload
+if [ -n "$termux" ] && command -v python3 >/dev/null 2>&1 &&
+    ! (cd "$tmp/home" && env -i HOME="$tmp/home" TERM=xterm-256color PATH="$PREFIX/bin" \
+        python3 "$tmp/src/tools/shell-check/pty-check.py" "$PREFIX/bin/zsh" > "$tmp/pty.log" 2>&1); then
+    cat "$tmp/pty.log"
+    echo "pre-push: zsh broke in a terminal"
+    failed=1
+fi
+
 if ! { bash "$tmp/src/tools/ci/check-rendered-files.sh" "$tmp/home" &&
     bash "$tmp/src/tools/ci/check-templates.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
     { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml"; } &&

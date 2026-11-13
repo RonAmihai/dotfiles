@@ -287,6 +287,7 @@ Steps run by order number, then by name. The order exists because some steps dep
 
 - A shell prints an error.
 - zsh and bash differ in their environment, PATH or aliases.
+- In a terminal, a shell crashes or prints an error while you type, when it reads its config a second time after an apply, or on `reload`. `tools/shell-check/pty-check.py` runs this part. It needs python3, and the pre-push hook runs it for zsh on Termux too.
 
 GitHub Actions runs it for each pull request, and for each push to `main`, that changes a file that chezmoi applies. It runs on macOS, Ubuntu, five Linux distributions, Windows MSYS2, Windows Git Bash and Termux. The same workflow also runs the checks in `tools/ci/`. You can run them on your machine too:
 
