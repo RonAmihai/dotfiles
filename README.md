@@ -208,6 +208,15 @@ Put the GPG key and the credential helpers of this machine in `~/.gitconfig.loca
 | `nclaude-acp`, `ncodex-acp`, `nopencode-acp` | Claude Code, Codex or opencode for an editor that hosts agents over ACP (JetBrains AI Assistant, Zed), in the same nono sandbox. They refuse to start in the home folder |
 | `git-checkout-latest` (`gch`), `git-nuke` (`gnuke`), `git-unlock`, `git-worktrees-remove` | Git helpers. Git also runs them as `git nuke`, `git unlock` and so on. `gch [branch]` checks out the branch and pulls it. Without a branch, it uses the default branch of `origin`, or `main`, or `master`. `gchu [branch]` runs `git-unlock` first |
 
+The chezmoi aliases in `~/.config/shell/tools/chezmoi.sh`:
+
+| Alias | Runs |
+|---|---|
+| `czm` | `chezmoi` |
+| `cza`, `czs`, `czd`, `czu` | `apply`, `status`, `diff` or `update` in each dotfiles layer (`chezmoi-private`, `chezmoi-work`), then in this repo, so its templates read the layers' data. Arguments go to this repo's command |
+| `cze <file>` | `chezmoi edit`: edit the source of a target in `$EDITOR` |
+| `czcd` | Go to this repo's source folder |
+
 ## Tool files
 
 Each tool has one file in `~/.config/shell/tools`: `<tool>.sh` for zsh and bash, or `<tool>.zsh` for zsh only. `env.sh` turns each tool file into one shell function. Each phase calls all the functions in name order, and `$DOTFILES_PHASE` names the phase. A file handles only the phases it needs.

@@ -49,3 +49,4 @@
 .gemini/config/global_workflows/reload.md
 .gemini/config/global_workflows/update-reload.md
 .local/bin/claude-npx
+.config/shell/tools/chezmoi.zsh
