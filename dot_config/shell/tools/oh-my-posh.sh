@@ -56,8 +56,8 @@ setup)
             mkdir -p "$_OMP_CACHE_DIR"
             # Generate OMP init which outputs: export POSH_SESSION_ID="...";source $'/path/to/init.zsh'
             local _omp_init_line=$(oh-my-posh init zsh --config ~/.config/oh-my-posh/cli-theme.omp.json 2>/dev/null)
-            # Extract the sourced init file path
-            local _omp_init_source=$(echo "$_omp_init_line" | grep -oE "source \\\$'[^']+'" | sed "s/source \\\$'//;s/'$//")
+            # command, because a second read of the config runs this after the aliases sed=sd and grep=rg exist
+            local _omp_init_source=$(echo "$_omp_init_line" | command grep -oE "source \\\$'[^']+'" | command sed "s/source \\\$'//;s/'$//")
             # A future oh-my-posh may print its init line in another form: run it uncached rather than lose the prompt
             if [[ ! -r "$_omp_init_source" ]]; then
                 eval "$_omp_init_line"
@@ -65,22 +65,22 @@ setup)
             fi
             # Cache secondary prompt, and patch the init file to read the cache instead of running oh-my-posh
             local _omp_patch
-            if grep -q 'print secondary --shell=zsh --eval' "$_omp_init_source"; then
+            if command grep -q 'print secondary --shell=zsh --eval' "$_omp_init_source"; then
                 # oh-my-posh 31 and later eval the secondary prompt settings
                 command oh-my-posh print secondary --shell=zsh --eval --config ~/.config/oh-my-posh/cli-theme.omp.json > "$_OMP_SECONDARY_CACHE" 2>/dev/null
                 _omp_patch="s|^eval \"\\\$(\\\$_omp_executable print secondary --shell=zsh --eval)\"\$|source '$_OMP_SECONDARY_CACHE'|"
             else
                 command oh-my-posh print secondary --shell=zsh --config ~/.config/oh-my-posh/cli-theme.omp.json > "$_OMP_SECONDARY_CACHE" 2>/dev/null
                 # Read secondary prompt and escape for sed replacement
-                local _secondary_escaped=$(cat "$_OMP_SECONDARY_CACHE" | sed 's/[&/\]/\\&/g')
+                local _secondary_escaped=$(command sed 's/[&/\]/\\&/g' "$_OMP_SECONDARY_CACHE")
                 _omp_patch="s/\\\$(\\\$_omp_executable print secondary --shell=zsh)/'$_secondary_escaped'/"
             fi
             # Create patched init: a new session ID for each shell (oh-my-posh keeps a cache per session), the config export, the patched init file
             {
                 print -r -- "$_omp_stamp"
                 print -r -- 'printf -v POSH_SESSION_ID "%08x-%04x-4%03x-%04x-%04x%04x%04x" $$ $RANDOM $((RANDOM % 4096)) $((RANDOM % 16384 + 32768)) $RANDOM $RANDOM $RANDOM; export POSH_SESSION_ID'
-                echo "$_omp_init_line" | sed 's/;source.*//; s/export POSH_SESSION_ID="[^"]*"; *//'
-                sed "$_omp_patch" "$_omp_init_source"
+                echo "$_omp_init_line" | command sed 's/;source.*//; s/export POSH_SESSION_ID="[^"]*"; *//'
+                command sed "$_omp_patch" "$_omp_init_source"
             } > "$_OMP_INIT_CACHE"
             zcompile "$_OMP_INIT_CACHE" 2>/dev/null
         fi

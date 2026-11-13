@@ -78,7 +78,7 @@ guid_to_base64() {
 base64_to_guid() {
     local guid_bytes
     guid_bytes=$(printf '%s' "${1}==" | base64 -d)
-    printf '%s' "$guid_bytes" | xxd -r -p | sed 's/\(..\)/\1-/g; s/-$//'
+    printf '%s' "$guid_bytes" | xxd -r -p | command sed 's/\(..\)/\1-/g; s/-$//'
 }
 
 # For the modern CLI replacements in the tool files (eza, bat, rg and the rest): only if installed, and never

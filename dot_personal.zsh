@@ -109,7 +109,14 @@ zicompinit_fast() {
 # Heavier plugins deferred — atload wires _self-insert-replace into the chain
 zinit wait lucid light-mode for \
     zsh-users/zsh-syntax-highlighting \
-    atload"zicompinit_fast; zicdreplay; zle -A self-insert _original-self-insert 2>/dev/null; zle -N self-insert _self-insert-replace" zsh-users/zsh-completions
+    atload"zicompinit_fast; zicdreplay; _wire_self_insert_replace" zsh-users/zsh-completions
+
+# A second read of this file runs the atload again, and wrapping self-insert twice makes it call itself until zsh crashes
+_wire_self_insert_replace() {
+    [[ $widgets[self-insert] == user:_self-insert-replace ]] && return
+    zle -A self-insert _original-self-insert 2>/dev/null
+    zle -N self-insert _self-insert-replace
+}
 
 zinit wait lucid atload'_dotfiles_after_compinit' for zdharma-continuum/null
 

@@ -8,8 +8,8 @@ setup)
             _work_profile=${TMPDIR:-/tmp}
             _work_profile=${_work_profile%/}/work-profile-$UID
         fi
-        if [ -d "$_work_profile" ] && ! kill -0 "$(cat "$_work_profile/pid" 2>/dev/null)" 2>/dev/null; then
-            echo "work profile from $(cat "$_work_profile/started" 2>/dev/null) is still on disk: run work --end" >&2
+        if [ -d "$_work_profile" ] && ! kill -0 "$(command cat "$_work_profile/pid" 2>/dev/null)" 2>/dev/null; then
+            echo "work profile from $(command cat "$_work_profile/started" 2>/dev/null) is still on disk: run work --end" >&2
         fi
         unset _work_profile
     fi
