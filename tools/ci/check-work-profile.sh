@@ -9,7 +9,7 @@ termux=
 [ -x /data/data/com.termux/files/usr/bin/pkg ] && termux=1
 if [ $# -eq 0 ]; then
     set -- session_env work_identity forbidden_terms personal_kept work_tools no_leak stale_warning refuses_with_work_layer \
-        alias_command logins_shared folder_trusted agents_no_leak
+        alias_command logins_shared folder_trusted settings_kept agents_no_leak
     [ -n "$termux" ] && set -- "$@" clean_keeps_live
 fi
 real_home=$HOME
@@ -197,6 +197,18 @@ check_folder_trusted() {
         ok "folder_trusted: Claude Code, Codex and agy trust the folder where the session starts"
     else
         fail "folder_trusted: these agents do not trust the session's folder: $bad"
+    fi
+}
+
+check_settings_kept() {
+    local out
+    printf '{"hasCompletedOnboarding":true,"theme":"light","projects":{"/personal":{"hasTrustDialogAccepted":true}}}\n' > "$home/.claude.json"
+    out=$(work -c 'jq -c "{theme, hasCompletedOnboarding, personal: (.projects | has(\"/personal\")), here: .projects[\"$PWD\"].hasTrustDialogAccepted}" "$CLAUDE_CONFIG_DIR/.claude.json"')
+    rm -f "$home/.claude.json"
+    if [ "$out" = '{"theme":"light","hasCompletedOnboarding":true,"personal":false,"here":true}' ]; then
+        ok "settings_kept: a session starts with Claude Code's choices from the home folder, without its per-folder history"
+    else
+        fail "settings_kept: the session's Claude Code config is $out"
     fi
 }
 

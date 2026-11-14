@@ -61,13 +61,32 @@ link_logins() {
     done
 }
 
+# The agents' own choices, such as finished onboarding, copied before the layers apply, whose templates keep what a file holds
+seed_agent_settings() {
+    local file claude_json=${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}
+    claude_json=${claude_json:-$HOME/.claude.json}
+    for file in .claude/settings.json .codex/config.toml .gemini/antigravity-cli/settings.json; do
+        [ -f "$HOME/$file" ] || continue
+        mkdir -p "$(dirname "$home/$file")" && cp "$HOME/$file" "$home/$file"
+    done
+    if [ -f "$claude_json" ] && command -v jq >/dev/null 2>&1; then
+        mkdir -p "$home/.claude" && jq 'del(.projects)' "$claude_json" > "$home/.claude/.claude.json"
+    fi
+}
+
 # A new profile knows no folder yet, so each agent would ask whether to trust the folder where the session starts
 trust_folder() {
-    local dir=$PWD settings=$home/.gemini/antigravity-cli/settings.json
+    local dir=$PWD settings=$home/.gemini/antigravity-cli/settings.json claude_json=$home/.claude/.claude.json
     case $dir in *'"'*|*'\'*) return 0 ;; esac
-    [ -e "$home/.claude/.claude.json" ] ||
-        printf '{"projects":{"%s":{"hasTrustDialogAccepted":true}}}\n' "$dir" > "$home/.claude/.claude.json"
-    [ -f "$home/.codex/config.toml" ] && printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$dir" >> "$home/.codex/config.toml"
+    if [ -f "$claude_json" ] && command -v jq >/dev/null 2>&1; then
+        jq --arg dir "$dir" '.projects[$dir].hasTrustDialogAccepted = true' "$claude_json" > "$claude_json.new" &&
+            mv "$claude_json.new" "$claude_json"
+    elif [ ! -e "$claude_json" ]; then
+        printf '{"projects":{"%s":{"hasTrustDialogAccepted":true}}}\n' "$dir" > "$claude_json"
+    fi
+    if [ -f "$home/.codex/config.toml" ] && ! grep -qxF "[projects.\"$dir\"]" "$home/.codex/config.toml"; then
+        printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$dir" >> "$home/.codex/config.toml"
+    fi
     if [ -f "$settings" ] && command -v jq >/dev/null 2>&1; then
         jq --arg dir "$dir" '.trustedWorkspaces = ((.trustedWorkspaces // []) + [$dir] | unique)' "$settings" > "$settings.new" &&
             mv "$settings.new" "$settings"
@@ -165,6 +184,7 @@ else
     git clone -q --depth 1 "$repo" "$profile/src" </dev/null || die "cannot clone $repo"
 fi
 
+seed_agent_settings
 printf '# The work layer needs no data\n' > "$profile/work.toml"
 # The work layer first, so the personal templates read the data that it adds
 chezmoi --config "$profile/work.toml" --source "$profile/src" --destination "$home" \
