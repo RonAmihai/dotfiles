@@ -14,4 +14,9 @@ setup)
         unset _work_profile
     fi
     return 0 ;;
+aliases)
+    command -v work >/dev/null 2>&1 || return 0
+    alias wcco='work cco' wccr='work ccr' wcdx='work cdx' wcdr='work cdr'
+    alias wagy='work agy' wagr='work agr' wopc='work opc' wopr='work opr'
+    return 0 ;;
 esac
