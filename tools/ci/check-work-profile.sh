@@ -8,7 +8,8 @@ shift
 termux=
 [ -x /data/data/com.termux/files/usr/bin/pkg ] && termux=1
 if [ $# -eq 0 ]; then
-    set -- session_env work_identity forbidden_terms personal_kept work_tools no_leak stale_warning refuses_with_work_layer agents_no_leak
+    set -- session_env work_identity forbidden_terms personal_kept work_tools no_leak stale_warning refuses_with_work_layer \
+        alias_command logins_shared folder_trusted agents_no_leak
     [ -n "$termux" ] && set -- "$@" clean_keeps_live
 fi
 real_home=$HOME
@@ -41,7 +42,8 @@ printf 'github.com:\n    user: ci\n' > "$home/.config/gh/hosts.yml"
 fakes=$scratch/fakes
 mkdir -p "$fakes"
 printf '#!%s\necho "agy home: $HOME"\n' "$sh_path" > "$fakes/agy"
-chmod +x "$fakes/agy"
+printf '#!%s\necho "opencode data: $XDG_DATA_HOME $XDG_STATE_HOME"\n' "$sh_path" > "$fakes/opencode"
+chmod +x "$fakes/agy" "$fakes/opencode"
 session_path=$fakes:$home/.local/bin:${chezmoi_bin%/*}:$PATH
 
 # Runs a command the way a new terminal session would
@@ -54,7 +56,7 @@ work() {
 
 check_session_env() {
     local out bad='' v
-    out=$(work -c 'env; echo "agy=$(command -v agy)"; agy')
+    out=$(work -c 'env; echo "agy=$(command -v agy)"; agy; opencode')
     for v in CLAUDE_CONFIG_DIR CODEX_HOME GH_CONFIG_DIR GLAB_CONFIG_DIR XDG_CONFIG_HOME XDG_CACHE_HOME HISTFILE DOTFILES_HOME \
         DOTNET_CLI_HOME NUGET_PACKAGES npm_config_cache GOPATH; do
         printf '%s\n' "$out" | grep -q "^$v=$profile/home" || bad="$bad $v"
@@ -62,8 +64,9 @@ check_session_env() {
     printf '%s\n' "$out" | grep -qx "GIT_CONFIG_GLOBAL=$profile/gitconfig" || bad="$bad GIT_CONFIG_GLOBAL"
     printf '%s\n' "$out" | grep -qx "agy=$profile/home/.local/bin/agy" || bad="$bad agy-path"
     printf '%s\n' "$out" | grep -qx "agy home: $profile/home" || bad="$bad agy-HOME"
+    printf '%s\n' "$out" | grep -qx "opencode data: $profile/home/.local/share $profile/home/.local/state" || bad="$bad opencode-data"
     if [ -z "$bad" ]; then
-        ok "session_env: the tool variables, the package caches, git and agy point into the profile"
+        ok "session_env: the tool variables, the package caches, git, agy and opencode point into the profile"
     else
         fail "session_env: wrong:$bad ($(head -c 300 "$scratch/work.err"))"
     fi
@@ -154,6 +157,49 @@ check_refuses_with_work_layer() {
     fi
 }
 
+check_alias_command() {
+    local out
+    out=$(fresh bash "$repo/dot_local/bin/executable_work" --source "$skeleton" ll -d / 2>"$scratch/work.err")
+    if printf '%s\n' "$out" | grep -q '^d.* /$'; then
+        ok "alias_command: work ll -d / runs the alias ll in a session"
+    else
+        fail "alias_command: work ll -d / printed: $out $(head -c 300 "$scratch/work.err")"
+    fi
+}
+
+check_logins_shared() {
+    local out
+    mkdir -p "$home/.codex"
+    echo token-1 > "$home/.codex/auth.json"
+    out=$(work -c 'test -L "$CODEX_HOME/auth.json" && cat "$CODEX_HOME/auth.json"')
+    if [ "$out" != token-1 ]; then
+        fail "logins_shared: the session did not get the linked login: '$out'"
+        return
+    fi
+    work -c 'rm "$CODEX_HOME/auth.json" && echo token-2 > "$CODEX_HOME/auth.json"'
+    if [ "$(cat "$home/.codex/auth.json")" = token-2 ]; then
+        ok "logins_shared: a session uses the home folder's login, and a token that a tool saves in a new file goes back to it"
+    else
+        fail "logins_shared: the refreshed login did not reach the home folder: $(cat "$home/.codex/auth.json")"
+    fi
+    rm -f "$home/.codex/auth.json"
+}
+
+check_folder_trusted() {
+    local out bad=''
+    out=$(work -c 'jq -e --arg dir "$PWD" ".projects[\$dir].hasTrustDialogAccepted" "$CLAUDE_CONFIG_DIR/.claude.json" >/dev/null || echo claude
+        grep -qxF "[projects.\"$PWD\"]" "$CODEX_HOME/config.toml" || echo codex
+        if command -v jq >/dev/null; then
+            jq -e --arg dir "$PWD" ".trustedWorkspaces | index(\$dir)" "$DOTFILES_HOME/.gemini/antigravity-cli/settings.json" >/dev/null || echo agy
+        fi')
+    bad=$(printf '%s' "$out" | tr '\n' ' ')
+    if [ -z "$bad" ]; then
+        ok "folder_trusted: Claude Code, Codex and agy trust the folder where the session starts"
+    else
+        fail "folder_trusted: these agents do not trust the session's folder: $bad"
+    fi
+}
+
 # Runs each installed agent once in a session, without a login, so a file that an agent writes outside its profile shows up
 check_agents_no_leak() {
     local agents='' agent real leaks
@@ -180,11 +226,15 @@ check_agents_no_leak() {
             ln -sf "$(realpath "$real")" "$home/.local/bin/$agent" && agents="$agents $agent"
         done
     fi
+    if real=$(command -v opencode); then
+        ln -sf "$(realpath "$real")" "$home/.local/bin/opencode" && agents="$agents opencode"
+    fi
     if [ -z "$agents" ]; then
-        echo "skip: agents_no_leak needs Claude Code, Codex or agy, and none is installed"
+        echo "skip: agents_no_leak needs Claude Code, Codex, agy or opencode, and none is installed"
         return
     fi
     mv "$fakes/agy" "$fakes/agy.off"
+    mv "$fakes/opencode" "$fakes/opencode.off"
     touch "$scratch/agents-before"
     sleep 1
     work -c "for agent in $agents; do
@@ -192,9 +242,11 @@ check_agents_no_leak() {
             claude) timeout 60 claude -p 'Reply with ok' ;;
             codex) timeout 30 codex exec --skip-git-repo-check 'Reply with ok' ;;
             agy) timeout 20 agy -p 'Reply with ok' ;;
+            opencode) timeout 30 opencode run 'Reply with ok' ;;
         esac
     done" >/dev/null 2>&1
     mv "$fakes/agy.off" "$fakes/agy"
+    mv "$fakes/opencode.off" "$fakes/opencode"
     leaks=$(find "$home" \( -type f -o -type l \) -newer "$scratch/agents-before" -print)
     if [ -n "$leaks" ]; then
         fail "agents_no_leak: in a session,$agents wrote to the home folder: $(printf '%s\n' "$leaks" | head -n 20 | tr '\n' ' ')"

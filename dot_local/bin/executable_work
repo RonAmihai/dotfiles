@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: work [--source DIR | REPO_URL] [-c COMMAND] | work --status | work --end — a shell whose work config lives in a temporary profile, which the end of the shell deletes
+# Usage: work [--repo URL | --source DIR] [COMMAND ...] | work --status | work --end — a shell, or one command such as an alias, whose work config lives in a temporary profile that the end of the session deletes
 set -uo pipefail
 
 # The shell tool file work.sh finds a profile that a closed session left at the same path
@@ -14,14 +14,16 @@ fi
 home=$profile/home
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 personal_config=$config_home/chezmoi/chezmoi.toml
+# Login files, relative to the home folder: a session links each one that exists, so no tool asks for a new login
+logins=".claude/.credentials.json .codex/auth.json .gemini/antigravity-cli/antigravity-oauth-token .local/share/opencode/auth.json .config/gh/hosts.yml .config/glab-cli/config.yml"
 
 say() { printf 'work: %s\n' "$*" >&2; }
 die() { say "$*"; exit 1; }
 
 usage() {
-    echo "usage: work [--source DIR | REPO_URL] [-c COMMAND]   start a work session, or run one command in it"
-    echo "       work --status                               show whether a work profile is on disk"
-    echo "       work --end                                  delete a work profile that a closed session left"
+    echo "usage: work [--repo URL | --source DIR] [COMMAND ...]   start a work shell, or run a command or alias in a session"
+    echo "       work --status                                    show whether a work profile is on disk"
+    echo "       work --end                                       delete a work profile that a closed session left"
 }
 
 session_pid() { cat "$profile/pid" 2>/dev/null; }
@@ -37,7 +39,8 @@ leak_report() {
     local leaks
     [ -f "$profile/started" ] || return 0
     leaks=$(find "$HOME" -xdev \( -path "$HOME/storage" -o -path "$HOME/Library" -o -path "$HOME/.dotnet" \) -prune \
-        -o \( -type f -o -type l \) -newer "$profile/started" -print 2>/dev/null)
+        -o \( -type f -o -type l \) -newer "$profile/started" -print 2>/dev/null |
+        grep -vxF -f <(sed "s|^|$HOME/|" "$profile/logins" 2>/dev/null))
     if [ -z "$leaks" ]; then
         say "no file in the home folder changed during the session"
         return 0
@@ -50,9 +53,42 @@ leak_report() {
     say "not scanned: ~/.dotnet, ~/Library and ~/storage"
 }
 
+link_logins() {
+    local login
+    for login in $logins; do
+        [ -f "$HOME/$login" ] || continue
+        mkdir -p "$(dirname "$home/$login")" && ln -sf "$HOME/$login" "$home/$login" && echo "$login" >> "$profile/logins"
+    done
+}
+
+# A new profile knows no folder yet, so each agent would ask whether to trust the folder where the session starts
+trust_folder() {
+    local dir=$PWD settings=$home/.gemini/antigravity-cli/settings.json
+    case $dir in *'"'*|*'\'*) return 0 ;; esac
+    [ -e "$home/.claude/.claude.json" ] ||
+        printf '{"projects":{"%s":{"hasTrustDialogAccepted":true}}}\n' "$dir" > "$home/.claude/.claude.json"
+    [ -f "$home/.codex/config.toml" ] && printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$dir" >> "$home/.codex/config.toml"
+    if [ -f "$settings" ] && command -v jq >/dev/null 2>&1; then
+        jq --arg dir "$dir" '.trustedWorkspaces = ((.trustedWorkspaces // []) + [$dir] | unique)' "$settings" > "$settings.new" &&
+            mv "$settings.new" "$settings"
+    fi
+}
+
+# A tool that saves a refreshed token by replacing its file breaks the link, so the new file goes back to the home folder
+keep_refreshed_logins() {
+    local login
+    [ -f "$profile/logins" ] || return 0
+    while IFS= read -r login; do
+        if [ -f "$home/$login" ] && [ ! -L "$home/$login" ] && [ "$home/$login" -nt "$HOME/$login" ]; then
+            cp -p "$home/$login" "$HOME/$login" && say "kept the login that the session refreshed: ~/$login"
+        fi
+    done < "$profile/logins"
+}
+
 end_profile() {
     [ -d "$profile" ] || return 0
     leak_report
+    keep_refreshed_logins
     rm -rf "$profile"
     say "deleted the work profile"
 }
@@ -74,15 +110,23 @@ while [ $# -gt 0 ]; do
             session_alive && die "the work session $(session_pid) still runs: leave it with exit"
             end_profile
             exit 0 ;;
-        --source|-c)
+        --source|--repo|-c)
             [ $# -ge 2 ] || die "$1 needs a value"
-            if [ "$1" = --source ]; then source_dir=$2; else command=$2; fi
+            case $1 in
+                --source) source_dir=$2 ;;
+                --repo) repo=$2 ;;
+                -c) command=$2 ;;
+            esac
             shift 2 ;;
         -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
         -*) usage >&2; die "unknown option: $1" ;;
-        *) repo=$1; shift ;;
+        *) break ;;
     esac
 done
+# The rest is a command for the session, quoted word by word, so an alias in the first word still expands
+words=''
+[ $# -gt 0 ] && printf -v words '%q ' "$@"
 
 [ -z "${WORK_PROFILE:-}" ] || die "this shell is already a work session"
 if [ -d "$HOME/.local/share/chezmoi-work" ] || [ -f "$config_home/git/work.gitconfig" ]; then
@@ -131,15 +175,20 @@ chezmoi --config "$home/.config/chezmoi/chezmoi.toml" --destination "$home" \
     --persistent-state "$home/.config/chezmoi/chezmoistate.boltdb" --cache "$profile/cache" \
     apply --exclude scripts,externals --force --no-tty </dev/null >/dev/null || die "the personal layer did not apply"
 
-if [ -f "$config_home/gh/hosts.yml" ]; then
-    mkdir -p "$home/.config/gh" && cp "$config_home/gh/hosts.yml" "$home/.config/gh/"
-fi
+link_logins
+trust_folder
 # The personal .gitconfig includes the work file through ~, which is the real home
 printf '[include]\n\tpath = %s\n[include]\n\tpath = %s\n' "$home/.gitconfig" "$home/.config/git/work.gitconfig" > "$profile/gitconfig"
 # agy has no config folder variable, so it gets the profile as its home
 if agy_bin=$(command -v agy); then
     printf '#!%s\nHOME=%s exec %s "$@"\n' "$sh_bin" "$home" "$agy_bin" > "$home/.local/bin/agy"
     chmod +x "$home/.local/bin/agy"
+fi
+# opencode keeps its login and sessions in the data and state folders, which the session cannot move for every tool
+if opencode_bin=$(command -v opencode); then
+    printf '#!%s\nXDG_DATA_HOME=%s XDG_STATE_HOME=%s exec %s "$@"\n' "$sh_bin" "$home/.local/share" "$home/.local/state" "$opencode_bin" \
+        > "$home/.local/bin/opencode"
+    chmod +x "$home/.local/bin/opencode"
 fi
 
 export WORK_PROFILE=$profile DOTFILES_HOME=$home
@@ -156,6 +205,8 @@ export PATH=$home/.local/bin:$PATH
 
 if [ -n "$command" ]; then
     zsh -c "$command"
+elif [ -n "$words" ]; then
+    zsh -i -c "$words"
 else
     say "work session: work config lives in $profile until you leave with exit"
     zsh -i
