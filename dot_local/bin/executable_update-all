@@ -161,9 +161,17 @@ run_steps() {
     fi
 }
 
+# A running shell keeps the config that it read when it started, so a changed config needs a reload
+_shell_marker=$(mktemp)
 if [[ $mode == update ]]; then
     _with_sudo_keepalive _timed run_steps
 else
     _timed run_steps
 fi
+_shell_home=${DOTFILES_HOME:-$HOME}
+if [[ -n $(find $_shell_home/.zshrc $_shell_home/.zshenv $_shell_home/.personal.zsh $_shell_home/.bashrc \
+    $_shell_home/.bash_profile $_shell_home/.config/shell -newer $_shell_marker 2>/dev/null | head -n 1) ]]; then
+    print -r -- "The shell config changed: run reload, or open a new terminal, to load it"
+fi
+rm -f $_shell_marker
 (( _update_failed == 0 ))

@@ -15,10 +15,40 @@ aliases)
         echo "== chezmoi"
         chezmoi "$subcommand" "$@"
     }
-    cza() { _chezmoi_layers apply "$@"; }
+    # exec would leave an agent's shell, which has no terminal, waiting for input, and orphan background jobs, so those get a hint
+    _chezmoi_reload_if_changed() {
+        local marker=$1 home=${DOTFILES_HOME:-$HOME} changed jobs_count
+        changed=$(find "$home/.zshrc" "$home/.zshenv" "$home/.personal.zsh" "$home/.bashrc" "$home/.bash_profile" \
+            "$home/.config/shell" -newer "$marker" 2>/dev/null | head -n 1)
+        rm -f "$marker"
+        [ -n "$changed" ] || return 0
+        if [ -n "${ZSH_VERSION:-}" ]; then
+            zmodload zsh/parameter 2>/dev/null
+            jobs_count=${#jobstates}
+        else
+            jobs_count=$(jobs -p | wc -l)
+        fi
+        if [ -n "${AGENT_SHELL:-}" ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+            echo "The shell config changed: run reload, or open a new terminal, to load it"
+        elif [ "$jobs_count" -gt 0 ]; then
+            echo "The shell config changed: run reload when your background jobs end"
+        else
+            echo "The shell config changed, so the shell reloads"
+            if [ -n "${ZSH_VERSION:-}" ]; then exec zsh; else exec bash; fi
+        fi
+    }
+    _chezmoi_layers_then_reload() {
+        local marker rc
+        marker=$(mktemp)
+        _chezmoi_layers "$@"
+        rc=$?
+        _chezmoi_reload_if_changed "$marker"
+        return $rc
+    }
+    cza() { _chezmoi_layers_then_reload apply "$@"; }
     czs() { _chezmoi_layers status "$@"; }
     czd() { _chezmoi_layers diff "$@"; }
-    czu() { _chezmoi_layers update "$@"; }
+    czu() { _chezmoi_layers_then_reload update "$@"; }
     czcd() { cd "$(chezmoi source-path)" || return; }
     return 0 ;;
 esac

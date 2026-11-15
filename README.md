@@ -214,7 +214,7 @@ The chezmoi aliases in `~/.config/shell/tools/chezmoi.sh`:
 | Alias | Runs |
 |---|---|
 | `czm` | `chezmoi` |
-| `cza`, `czs`, `czd`, `czu` | `apply`, `status`, `diff` or `update` in each dotfiles layer (`chezmoi-private`, `chezmoi-work`), then in this repo, so its templates read the layers' data. Arguments go to every layer, so `cza --dry-run` changes nothing anywhere. For one file, use `czm apply <file>` |
+| `cza`, `czs`, `czd`, `czu` | `apply`, `status`, `diff` or `update` in each dotfiles layer (`chezmoi-private`, `chezmoi-work`), then in this repo, so its templates read the layers' data. Arguments go to every layer, so `cza --dry-run` changes nothing anywhere. For one file, use `czm apply <file>`. When `cza` or `czu` changed the shell config, the shell reloads, but only at a terminal with no background jobs. Elsewhere, and after `update-all`, a line says to run `reload` |
 | `cze <file>` | `chezmoi edit`: edit the source of a target in `$EDITOR` |
 | `czcd` | Go to this repo's source folder |
 
