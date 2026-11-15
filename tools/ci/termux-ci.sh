@@ -10,7 +10,8 @@ step() {
     "$@" || { echo "FAILED: $*"; status=1; }
 }
 
-apt-get update -qq >/dev/null && apt-get install -y -qq zsh chezmoi git jq proot python openssh oh-my-posh >/dev/null || exit 1
+. "$src/tools/ci/termux-apt.sh"
+termux_apt_install zsh chezmoi git jq proot python openssh oh-my-posh || exit 1
 git config --global --add safe.directory '*'
 # The git-hooks script writes into the source's .git, so the source must be writable
 work=$(mktemp -d)

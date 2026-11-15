@@ -5,7 +5,8 @@ set -uo pipefail
 src=$(cd "$(dirname "$0")/../.." && pwd)
 status=0
 
-apt-get update -qq >/dev/null && apt-get install -y -qq chezmoi git gh jq proot curl >/dev/null || exit 1
+. "$src/tools/ci/termux-apt.sh"
+termux_apt_install chezmoi git gh jq proot curl || exit 1
 git config --global --add safe.directory '*'
 work=$(mktemp -d)
 cp -R "$src" "$work/src"
