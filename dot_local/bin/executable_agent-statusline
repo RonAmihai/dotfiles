@@ -404,12 +404,12 @@ CFG_MID = {
     "show_effort": True,
     "show_cost": True,
     "show_5h": True,
-    "show_7d": False,              # drop 7d
+    "show_7d": True,
     "show_5h_reset": False,        # drop "↻ 21:00"
     "show_7d_reset": False,
     "model_level": 0,
     "effort_short": False,
-    "rl_compact": False,
+    "rl_compact": True,            # ⏱️ 11% | 📅 57%
     "align": False,
 }
 
@@ -418,7 +418,7 @@ CFG_MIN = {
     "show_effort": True,
     "show_cost": False,            # drop $
     "show_5h": True,
-    "show_7d": False,
+    "show_7d": True,
     "show_5h_reset": False,
     "show_7d_reset": False,
     "model_level": 2,              # O 4.7
