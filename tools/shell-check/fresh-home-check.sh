@@ -92,13 +92,14 @@ check() {
 # A terminal runs what -c cannot: the key handlers, deferred plugins, a second read of the config after an apply, and reload
 python_bin=$(command -v python3)
 pty_check() {
-    local label=$1 out
-    shift
-    if [ -z "$python_bin" ]; then
-        echo "skip: no python3, so the $label shell gets no terminal check"
+    local label=$1 shell=$2 out
+    if [ -z "$python_bin" ] || ! "$python_bin" -c 'import pty' 2>/dev/null; then
+        echo "skip: no python3 with pty, as on Windows, so the $label shell gets no terminal check"
         return
     fi
-    if out=$(cd "$home" && env -i HOME="$home" $login_env "$python_bin" "$repo/tools/shell-check/pty-check.py" "$@" 2>&1); then
+    # A terminal session finds its own shell on PATH, which reload needs, and Termux keeps its shells outside /usr/bin
+    if out=$(cd "$home" && env -i HOME="$home" $login_env PATH="${shell%/*}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+        "$python_bin" "$repo/tools/shell-check/pty-check.py" "$shell" 2>&1); then
         echo "ok: the $label shell takes typing, a second read of its config and reload in a terminal"
     else
         echo "FAIL: the $label shell broke in a terminal:"

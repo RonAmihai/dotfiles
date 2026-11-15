@@ -59,14 +59,14 @@ for line, number in steps:
         time.sleep(2)
         continue
     if not step(line, number):
-        print(f"the shell stopped answering after: {line or 'its start'}")
         print(text()[-1500:])
+        print(f"the shell stopped answering after: {line or 'its start'}")
         sys.exit(1)
 
 os.write(fd, b"exit\r")
 time.sleep(0.5)
 bad = [line for line in text().splitlines() if errors.search(line)]
 if bad:
-    print("the shell printed errors:")
     print("\n".join(bad[:15]))
+    print("the shell printed the errors above")
     sys.exit(1)
