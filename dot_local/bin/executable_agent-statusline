@@ -326,9 +326,9 @@ def build(data: dict, cwd: str, cfg: dict) -> tuple[list[str], list[str]]:
     if effort and cfg["show_effort"]:
         line1.append(f"💪 {short_effort(effort, cfg['effort_short'])}")
 
-    if used is not None:
-        pct = round(used)
-        line1.append(f"🧠 {threshold_color(pct, 50, 70)}{pct}%{RESET}")
+    # A new session reports no context use until its first reply
+    pct = round(used) if used is not None else 0
+    line1.append(f"🧠 {threshold_color(pct, 50, 70)}{pct}%{RESET}")
 
     if cost is not None and cfg["show_cost"]:
         line1.append(f"💰 {threshold_color(cost, 1, 5)}${cost:.2f}{RESET}")
@@ -430,6 +430,19 @@ CFG_MIN = {
 STATES = [CFG_FULL, CFG_MID, CFG_MIN]
 
 
+def widest(data: dict) -> dict:
+    """The data with each missing field at its widest, so the layout stays the same while a new session's fields arrive."""
+    sized = dict(data)
+    if (data.get("context_window") or {}).get("used_percentage") is None:
+        sized["context_window"] = {"used_percentage": 100}
+    limits = dict(data.get("rate_limits") or {})
+    for name in ("five_hour", "seven_day"):
+        if (limits.get(name) or {}).get("used_percentage") is None or (limits.get(name) or {}).get("resets_at") is None:
+            limits[name] = {"used_percentage": 100, "resets_at": int(datetime.now().timestamp())}
+    sized["rate_limits"] = limits
+    return sized
+
+
 def main() -> None:
     data = json.load(sys.stdin)
     tw = terminal_width(data.get("terminal_width"))
@@ -441,10 +454,10 @@ def main() -> None:
     # MID is given a small slack budget so we stay on MID through slight overflow
     # rather than dropping straight to MIN — keeps more information visible.
     MID_SLACK = 2
+    sized = widest(data)
     chosen = STATES[-1]
-    line1, line2 = build(data, cwd, chosen)
     for cfg in STATES:
-        l1, l2 = build(data, cwd, cfg)
+        l1, l2 = build(sized, cwd, cfg)
         if cfg["align"]:
             w1 = aligned_line_width(l1, l2)
             w2 = aligned_line_width(l2, l1)
@@ -452,9 +465,9 @@ def main() -> None:
             w1, w2 = line_pixel_width(l1), line_pixel_width(l2)
         budget = tw + (MID_SLACK if cfg is CFG_MID else 0)
         if w1 <= budget and w2 <= budget:
-            chosen, line1, line2 = cfg, l1, l2
+            chosen = cfg
             break
-        chosen, line1, line2 = cfg, l1, l2  # keep latest, fall through
+    line1, line2 = build(data, cwd, chosen)
 
     if chosen["align"]:
         cols = max(len(line1), len(line2))
