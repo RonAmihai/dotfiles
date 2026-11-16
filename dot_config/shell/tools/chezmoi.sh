@@ -50,6 +50,7 @@ aliases)
     czd() { _chezmoi_layers diff "$@"; }
     czu() { _chezmoi_layers_then_reload update "$@"; }
     czcd() { cd "$(chezmoi source-path)" || return; }
+    czcheck() { bash "$(chezmoi source-path)/tools/shell-check/check-this-machine.sh" "$@"; }
     return 0 ;;
 esac
 [ -n "${ZSH_VERSION:-}" ] || return 0
