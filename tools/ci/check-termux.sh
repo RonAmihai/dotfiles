@@ -7,7 +7,7 @@ shift
 [ $# -gt 0 ] || set -- env_values aliases update_order clipboard_timeout clean_steps shortcuts_call_wrapper ua_without_zsh plugins_once \
     agent_rules gitconfig_gitlab codex_no_sandbox_on_android plugins_script_ci script_shebangs trust_homedir home_claude_md \
     packages_script default_shell font_script args_survive glibc_args_survive no_nested_proot \
-    dotnet_wrapper_first old_dotnet_wrapper
+    dotnet_wrapper_first old_dotnet_wrapper home_survives
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 prefix=${PREFIX:-/data/data/com.termux/files/usr}
 sh_path=$(command -v sh)
@@ -52,6 +52,15 @@ update_all() {
 
 titles() {
     sed -n 's/^═* \(.*[^ ]\) ═*$/\1/p'
+}
+
+# Inside the chroot already, a second proot can stop under the first, so the command runs there directly
+chroot_run() {
+    if [ -e /usr/bin/pkg ]; then
+        sh -c "$1"
+    else
+        termux-chroot "$1"
+    fi
 }
 
 # Applies the repo to HOME the way the checked render was made, plus any extra environment, such as a fake glab on PATH
@@ -143,10 +152,9 @@ check_update_order() {
     else
         ok "update_order: termux-pkg, claude-code, claude, codex, dotnet-sdk, dotnet and dotfiles run in order, with no agy update and no APT"
     fi
-    if ! command -v termux-chroot >/dev/null 2>&1; then
+    if [ ! -e /usr/bin/pkg ] && ! command -v termux-chroot >/dev/null 2>&1; then
         fail "update_order: termux-chroot is missing, so APT inside the chroot is untested (pkg install proot)"
-    elif termux-chroot "cd $h && HOME=$h PREFIX=$prefix TERM=dumb PATH=$fakes:/usr/bin:$prefix/bin zsh $h/.local/bin/update-all --dry-run </dev/null" 2>/dev/null \
-        | sed 's/\x1b\[[0-9;]*m//g' | titles | grep -qx APT; then
+    elif chroot_run "cd $h && HOME=$h PREFIX=$prefix TERM=dumb PATH=$fakes:/usr/bin:$prefix/bin zsh $h/.local/bin/update-all --dry-run </dev/null" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | titles | grep -qx APT; then
         fail "update_order: inside termux-chroot, where /etc/apt is Termux's, the dry run lists APT"
     else
         ok "update_order: inside termux-chroot the dry run does not list APT"
@@ -388,7 +396,11 @@ check_packages_script() {
 }
 
 check_default_shell() {
-    if [ -L "$home/.termux/shell" ] && [ "$(readlink "$home/.termux/shell")" = "$prefix/bin/zsh" ]; then
+    local target
+    target=$(readlink "$home/.termux/shell")
+    # Inside termux-chroot, readlink shows a target under $PREFIX as /usr/...
+    [ -e /usr/bin/pkg ] && [ "$target" = /usr/bin/zsh ] && target=$prefix/bin/zsh
+    if [ -L "$home/.termux/shell" ] && [ "$target" = "$prefix/bin/zsh" ]; then
         ok "default_shell: ~/.termux/shell links to zsh"
     else
         fail "default_shell: ~/.termux/shell is not a link to $prefix/bin/zsh"
@@ -431,6 +443,16 @@ tricky_lines() {
     echo .
 }
 
+check_home_survives() {
+    local exec=$home/.local/bin/termux-chroot-exec out
+    out=$(HOME="$scratch" "$exec" sh -c 'echo "$HOME"' 2>/dev/null)
+    if [ "$out" = "$scratch" ]; then
+        ok "home_survives: a command that termux-chroot-exec runs keeps a HOME other than the real home"
+    else
+        fail "home_survives: with HOME=$scratch, the command saw HOME=$out"
+    fi
+}
+
 check_args_survive() {
     local exec=$home/.local/bin/termux-chroot-exec out inner plain
     if [ ! -x "$exec" ]; then
@@ -439,14 +461,15 @@ check_args_survive() {
     fi
     out=$(tricky_args "$exec" printf '%s\n' 2>/dev/null; echo .)
     printf '%s\n' "$(declare -f tricky_args)" "tricky_args '$exec' printf '%s\n'" > "$scratch/in-chroot.sh"
-    inner=$(termux-chroot "bash $scratch/in-chroot.sh" 2>/dev/null; echo .)
-    plain=$(termux-chroot printf '%s\n' "a b" 2>/dev/null)
+    inner=$(chroot_run "bash $scratch/in-chroot.sh" 2>/dev/null; echo .)
+    plain=
+    [ -e /usr/bin/pkg ] || plain=" (plain termux-chroot prints '$(termux-chroot printf '%s\n' "a b" 2>/dev/null)')"
     if [ "$out" != "$(tricky_lines)" ]; then
         fail "args_survive: outside the chroot it printed: $(printf '%s' "$out" | tr '\n' '|')"
     elif [ "$inner" != "$(tricky_lines)" ]; then
         fail "args_survive: inside the chroot it printed: $(printf '%s' "$inner" | tr '\n' '|')"
     else
-        ok "args_survive: termux-chroot-exec passes spaces, quotes, \$HOME, * and an empty argument unchanged, outside and inside the chroot (plain termux-chroot prints '$plain')"
+        ok "args_survive: termux-chroot-exec passes spaces, quotes, \$HOME, * and an empty argument unchanged, outside and inside the chroot$plain"
     fi
 }
 
@@ -478,7 +501,7 @@ check_no_nested_proot() {
     done
     for wrapper in "$h/.local/bin/claude" "$h/.local/bin/codex" "$h/.local/bin/dotnet"; do
         printf '%s\n' "export HOME='$h' PATH='$fakes:/usr/bin'" "'$wrapper' 'x y'" > "$scratch/nested.sh"
-        out=$(termux-chroot "bash $scratch/nested.sh" 2>/dev/null)
+        out=$(chroot_run "bash $scratch/nested.sh" 2>/dev/null)
         printf '%s\n' "$out" | grep -qx 'x y' || bad="$bad ${wrapper##*/}(no 'x y')"
     done
     if [ -s "$log" ]; then

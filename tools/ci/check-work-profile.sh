@@ -215,10 +215,6 @@ check_settings_kept() {
 # Runs each installed agent once in a session, without a login, so a file that an agent writes outside its profile shows up
 check_agents_no_leak() {
     local agents='' agent real leaks
-    if [ -n "$termux" ] && [ ! -x /usr/bin/pkg ]; then
-        echo "skip: agents_no_leak runs inside termux-chroot, because outside it termux-chroot gives the agents the real HOME"
-        return
-    fi
     mkdir -p "$home/.local/bin"
     if [ -n "$termux" ]; then
         if [ -x "$real_home/.local/share/claude/claude-native" ]; then

@@ -6,4 +6,9 @@ quoted=
 for arg in "$@"; do
     quoted="$quoted '${arg//\'/\'\\\'\'}'"
 done
-exec termux-chroot "exec$quoted"
+# termux-chroot sets HOME to /home, which is always the real home, so another HOME, such as a test's, goes in with the command
+keep_home=
+if [ "$(cd "$HOME" 2>/dev/null && pwd -P)" != "$(cd "${PREFIX:-/data/data/com.termux/files/usr}/../home" && pwd -P)" ]; then
+    keep_home="HOME='${HOME//\'/\'\\\'\'}'; "
+fi
+exec termux-chroot "${keep_home}exec$quoted"
