@@ -34,13 +34,18 @@ saved_repo() {
     sed -n "s/^export WORK_DOTFILES_REPO=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}\$/\1/p" "$HOME/.local.zsh" 2>/dev/null | tail -n 1
 }
 
-# The SDK folders change only when an update runs, and they hold most of the files in a home folder
+# The skipped folders hold the SDKs and your own agents' sessions, which change meanwhile without a leak
 leak_report() {
     local leaks
     [ -f "$profile/started" ] || return 0
-    leaks=$(find "$HOME" -xdev \( -path "$HOME/storage" -o -path "$HOME/Library" -o -path "$HOME/.dotnet" \) -prune \
+    leaks=$(find "$HOME" -xdev \( -path "$HOME/storage" -o -path "$HOME/Library" -o -path "$HOME/.dotnet" \
+        -o -path "$HOME/.claude/projects" -o -path "$HOME/.claude/sessions" -o -path "$HOME/.claude/todos" \
+        -o -path "$HOME/.claude/shell-snapshots" -o -path "$HOME/.claude/skills/synced" \
+        -o -path "$HOME/.codex/sessions" -o -path "$HOME/.codex/log" \
+        -o -path "$HOME/.gemini/antigravity-cli" \) -prune \
         -o \( -type f -o -type l \) -newer "$profile/started" -print 2>/dev/null |
-        grep -vxF -f <(sed "s|^|$HOME/|" "$profile/logins" 2>/dev/null))
+        grep -vxF -f <({ sed "s|^|$HOME/|" "$profile/logins" 2>/dev/null
+            printf '%s\n' "$HOME/.claude.json" "$HOME/.claude/history.jsonl" "$HOME/.codex/history.jsonl"; }))
     if [ -z "$leaks" ]; then
         say "no file in the home folder changed during the session"
         return 0
@@ -50,7 +55,7 @@ leak_report() {
         { p = substr($0, length(home) + 1); n = split(p, part, "/")
           key = n > 2 ? part[1] "/" part[2] "/" : (n == 2 ? part[1] "/" : part[1]); count[key]++ }
         END { for (k in count) printf "  ~/%s (%d)\n", k, count[k] }' | sort >&2
-    say "not scanned: ~/.dotnet, ~/Library and ~/storage"
+    say "not scanned: ~/.dotnet, ~/Library, ~/storage and the sessions of your own agents"
 }
 
 link_logins() {
