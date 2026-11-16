@@ -91,6 +91,28 @@ Create every git worktree inside `.worktrees/` in the project root, for example
 `.worktrees/<branch-name>`. Never create one outside the project directory.
 `~/.config/git/ignore` ignores that path globally.
 
+## Keep test settings out of global files
+
+Put a setting for a test, a test server or a one-off task on the command or in the repo:
+`git -c <key>=<value>`, `git config --local`, or an environment variable. Never write it
+to a global file such as `~/.gitconfig`, `~/.npmrc` or the global `NuGet.Config`.
+Chezmoi writes `~/.gitconfig`, so a change there disappears on the next apply, or it
+stays behind as a test leftover.
+
+Some tools write the global git file on their own. For example, git-credential-manager
+saves the provider of each new HTTPS host that it probes. Before you run git against a
+test server, write a temporary file that holds only these lines:
+
+```gitconfig
+[include]
+	path = ~/.gitconfig
+```
+
+Then start each git command for that server with `GIT_CONFIG_GLOBAL=<temporary file>`.
+git still reads every setting, and each global write goes to the temporary file. A
+`work` session needs none of this, because its global git file is already temporary. If
+a tool changed `~/.gitconfig` anyway, tell me.
+
 ## Permission prompts and approvals
 
 Minimize permission prompts. If an allowed command or a read-only check can finish the
