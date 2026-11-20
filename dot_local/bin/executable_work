@@ -203,7 +203,8 @@ chezmoi --config "$home/.config/chezmoi/chezmoi.toml" --destination "$home" \
 link_logins
 trust_folder
 # The personal .gitconfig includes the work file through ~, which is the real home
-printf '[include]\n\tpath = %s\n[include]\n\tpath = %s\n' "$home/.gitconfig" "$home/.config/git/work.gitconfig" > "$profile/gitconfig"
+# Signing comes last to override the work layer, because a work session has no signing key
+printf '[include]\n\tpath = %s\n[include]\n\tpath = %s\n[commit]\n\tgpgsign = false\n' "$home/.gitconfig" "$home/.config/git/work.gitconfig" > "$profile/gitconfig"
 # agy has no config folder variable, so it gets the profile as its home
 if agy_bin=$(command -v agy); then
     printf '#!%s\nHOME=%s exec %s "$@"\n' "$sh_bin" "$home" "$agy_bin" > "$home/.local/bin/agy"
