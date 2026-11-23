@@ -5,7 +5,7 @@ spacing = "compact"
 new_windows_num_rows = 20
 left_panel_visibility_across_tabs = true
 zoom_level = 90
-override_opacity = 75
+override_opacity = 95
 open_windows_at_custom_size = false
 
 [appearance.blocks]
