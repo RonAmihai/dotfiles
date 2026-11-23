@@ -64,7 +64,8 @@ jq -e '
     and .trustedWorkspaces == ["/sample"]
     and .altScreenMode == "always"
     and .statusLine.type == "command"
-    and (.statusLine.command | endswith("agent-statusline --agy"))
+    and (.statusLine.command | contains("agent-statusline"))
+    and (.statusLine.command | endswith("--agy"))
 ' "$tmp/agy.once" > /dev/null || fail "dot_gemini/antigravity-cli/modify_private_settings.json rendered wrong agy settings"
 
 # Warp's settings sync owns an existing file, so chezmoi may only add the Windows startup shell
