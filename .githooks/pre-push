@@ -72,9 +72,19 @@ if [ -n "$termux" ] && command -v python3 >/dev/null 2>&1 &&
     failed=1
 fi
 
+check_jetbrains() {
+    [ -n "$termux" ] && return 0
+    case $(uname -s) in
+        MINGW*|MSYS*)
+            pwsh -NoProfile -ExecutionPolicy Bypass -File "$tmp/src/tools/ci/check-jetbrains.ps1" \
+                -Chezmoi "$(command -v chezmoi.exe)" -Config "$tmp/chezmoi.toml" ;;
+        *) bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" ;;
+    esac
+}
+
 if ! { bash "$tmp/src/tools/ci/check-rendered-files.sh" "$tmp/home" &&
     bash "$tmp/src/tools/ci/check-templates.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml" &&
-    { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-jetbrains.sh" "$(command -v chezmoi)" "$tmp/chezmoi.toml"; } &&
+    check_jetbrains &&
     { [ -n "$termux" ] || bash "$tmp/src/tools/ci/check-statusline.sh"; }; } > "$tmp/ci.log" 2>&1; then
     cat "$tmp/ci.log"
     echo "pre-push: a check in tools/ci failed"
