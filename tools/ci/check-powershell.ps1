@@ -28,6 +28,12 @@ foreach ($script in $scripts) {
 }
 Write-Host "check-powershell: $($scripts.Count) scripts parse"
 
+$dotfilesSource = Get-Content -Raw (Join-Path $repo 'dot_config/powershell/dotfiles.ps1')
+if ($dotfilesSource.Contains('if ($interactive -and -not $script:DotfilesAgentShell)')) {
+    throw 'the agent shell guard hides the PowerShell aliases'
+}
+Write-Host 'check-powershell: agent shells keep the PowerShell aliases'
+
 if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
     Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 }
@@ -43,6 +49,36 @@ Copy-Item (Join-Path $RenderedHome '.config/powershell') $profileCopy -Recurse
 $reloaded = @(& $pwsh -NoLogo -NoProfile -Command ". '$(Join-Path $PSScriptRoot 'powershell-reload-test.ps1')' '$profileCopy'")
 if ($reloaded[-1] -ne 'reloaded') { throw "Reload-Dotfiles kept the old functions: $($reloaded -join ' ')" }
 Write-Host 'check-powershell: Reload-Dotfiles replaces the functions'
+
+$commandTest = Join-Path $work 'powershell-command-test.ps1'
+$commandTestContent = @'
+param([Parameter(Mandatory)][string] $ProfileRoot)
+function claude-reload { "claude:$($args -join '|')" }
+function codex-reload { "codex:$($args -join '|')" }
+function agy-reload { "agy:$($args -join '|')" }
+function opencode { "opencode:$($args -join '|')" }
+function chezmoi { "chezmoi:$($args -join '|')" }
+function work { "work:$($args -join '|')" }
+. (Join-Path $ProfileRoot 'dotfiles.ps1')
+Initialize-DotfilesCommandAliases
+$names = @(
+    'claude', 'cco', 'ccr', 'codex', 'cdx', 'cdr', 'agy', 'agr', 'opc', 'opr',
+    'czm', 'cze', 'cza', 'czs', 'czd', 'czu', 'czcd', 'czcheck',
+    'wcco', 'wccr', 'wcdx', 'wcdr', 'wagy', 'wagr', 'wopc', 'wopr'
+)
+$missing = @($names | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+if ($missing) { throw "missing commands: $($missing -join ', ')" }
+$actual = @(& cco x; & ccr x; & cdx x; & cdr x; & agr x; & opc x; & wcdx x)
+$expected = @(
+    'claude:--ide|x', 'claude:--ide|--resume|x', 'codex:x', 'codex:resume|x',
+    'agy:--continue|x', 'opencode:x', 'work:cdx|x'
+)
+if (($actual -join "`n") -ne ($expected -join "`n")) { throw "wrong commands: $($actual -join ', ')" }
+'@
+$commandTestContent | Set-Content $commandTest
+& $pwsh -NoLogo -NoProfile -File $commandTest $profileCopy
+if ($LASTEXITCODE -ne 0) { throw 'the PowerShell agent or dotfiles commands failed' }
+Write-Host 'check-powershell: agent and dotfiles commands match the shared shell commands'
 
 if (-not $IsWindows) {
     $loadHome = Join-Path $work 'home'

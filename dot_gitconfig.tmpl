@@ -45,7 +45,14 @@
 	path = ~/.gitconfig.local
 {{- if and (eq .chezmoi.os "linux") (env "WSL_DISTRO_NAME") }}
 {{- with lookPath "git.exe" }}
-{{- $wslGcm := joinPath (dir (dir .)) "mingw64/bin/git-credential-manager.exe" }}
+{{- $gitRoot := dir (dir .) }}
+{{- $wslGcm := joinPath $gitRoot "ucrt64/bin/git-credential-manager.exe" }}
+{{- if not (stat $wslGcm) }}
+{{- $wslGcm = joinPath $gitRoot "clangarm64/bin/git-credential-manager.exe" }}
+{{- end }}
+{{- if not (stat $wslGcm) }}
+{{- $wslGcm = joinPath $gitRoot "mingw64/bin/git-credential-manager.exe" }}
+{{- end }}
 {{- if stat $wslGcm }}
 [credential]
 	helper = {{ replace " " "\\ " $wslGcm | quote }}

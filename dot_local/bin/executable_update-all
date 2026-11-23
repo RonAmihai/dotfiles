@@ -89,6 +89,7 @@ _update_chezmoi() {
         print "  No upstream branch, so nothing to pull"
     elif ! GIT_TERMINAL_PROMPT=0 git -C "$src" fetch --quiet; then
         print "  Fetch failed, so nothing was pulled"
+        (( _update_failed++ ))
     else
         local behind=$(git -C "$src" rev-list --count 'HEAD..@{u}') ahead=$(git -C "$src" rev-list --count '@{u}..HEAD')
         local dirty=$(git -C "$src" status --porcelain)

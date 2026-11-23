@@ -192,6 +192,176 @@ function Copy-DotfilesClipboard {
 
 function Get-DotfilesClipboard { Get-Clipboard @args }
 
+function Start-ClaudeIde { & claude --ide @args }
+function Resume-ClaudeIde { & claude --ide --resume @args }
+function Start-Codex { & codex @args }
+function Resume-Codex { & codex resume @args }
+function Resume-Antigravity { & agy --continue @args }
+
+function Resume-OpenCode {
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        & opencode --continue @args
+        return
+    }
+
+    $json = (& opencode session list --format json) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or -not $json) { return }
+    try { $sessions = @($json | ConvertFrom-Json) }
+    catch {
+        & opencode --continue @args
+        return
+    }
+
+    $rows = @($sessions | ForEach-Object {
+        $updated = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$_.updated).LocalDateTime.ToString('dd/MM HH:mm')
+        $title = if ($_.title) { $_.title } else { 'untitled' }
+        "$($_.id)`t$updated`t$title"
+    })
+    $selected = ($rows | & fzf --delimiter "`t" --with-nth '2..' --prompt 'session> ') -join "`n"
+    if ($LASTEXITCODE -ne 0 -or -not $selected) { return }
+    $id = ($selected -split "`t", 2)[0]
+    & opencode --session $id @args
+}
+
+function Start-WorkClaudeIde { & work cco @args }
+function Resume-WorkClaudeIde { & work ccr @args }
+function Start-WorkCodex { & work cdx @args }
+function Resume-WorkCodex { & work cdr @args }
+function Start-WorkAntigravity { & work agy @args }
+function Resume-WorkAntigravity { & work agr @args }
+function Start-WorkOpenCode { & work opc @args }
+function Resume-WorkOpenCode { & work opr @args }
+
+function Edit-Dotfiles { & chezmoi edit @args }
+
+function Invoke-ChezmoiLayers {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)][string] $Subcommand,
+        [Parameter(ValueFromRemainingArguments)][object[]] $ArgumentList
+    )
+
+    $bin = Join-Path $HOME '.local/bin'
+    $layers = @(Get-ChildItem -Path (Join-Path $bin 'chezmoi-*') -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    foreach ($layer in $layers) {
+        Write-Host "== $($layer.BaseName)"
+        & $layer.FullName $Subcommand @ArgumentList
+        if ($LASTEXITCODE -ne 0) { return }
+    }
+    Write-Host '== chezmoi'
+    & chezmoi $Subcommand @ArgumentList
+}
+
+function Update-DotfilesShellAfterApply {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][datetime] $Since)
+
+    $profileRoot = Join-Path $HOME '.config/powershell'
+    $changed = Get-ChildItem -LiteralPath $profileRoot -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -gt $Since } |
+        Select-Object -First 1
+    if (-not $changed) { return }
+
+    $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+    if ($script:DotfilesAgentShell -or -not $interactive) {
+        Write-Host 'The PowerShell config changed: run reload, or open a new terminal, to load it'
+        return
+    }
+    if (@(Get-Job -State Running -ErrorAction SilentlyContinue).Count -gt 0) {
+        Write-Host 'The PowerShell config changed: run reload when your background jobs end'
+        return
+    }
+    Write-Host 'The PowerShell config changed, so it reloads'
+    Reload-Dotfiles
+}
+
+function Invoke-ChezmoiLayersThenReload {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)][string] $Subcommand,
+        [Parameter(ValueFromRemainingArguments)][object[]] $ArgumentList
+    )
+
+    $marker = New-TemporaryFile
+    try {
+        Invoke-ChezmoiLayers $Subcommand @ArgumentList
+        $exitCode = $global:LASTEXITCODE
+        Update-DotfilesShellAfterApply -Since $marker.LastWriteTimeUtc
+        $global:LASTEXITCODE = $exitCode
+    }
+    finally {
+        Remove-Item -LiteralPath $marker.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Apply-Dotfiles { Invoke-ChezmoiLayersThenReload apply @args }
+function Get-DotfilesStatus { Invoke-ChezmoiLayers status @args }
+function Compare-Dotfiles { Invoke-ChezmoiLayers diff @args }
+function Update-Dotfiles { Invoke-ChezmoiLayersThenReload update @args }
+
+function Set-DotfilesSourceLocation {
+    $source = (& chezmoi source-path) -join "`n"
+    if ($LASTEXITCODE -eq 0 -and $source) { Set-Location -LiteralPath $source }
+}
+
+function Test-DotfilesMachine {
+    $source = (& chezmoi source-path) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or -not $source) { return }
+    & bash (Join-Path $source 'tools/shell-check/check-this-machine.sh') @args
+}
+
+function Initialize-DotfilesCommandAliases {
+    $agentReloadAliases = @{
+        claude = 'claude-reload'
+        codex = 'codex-reload'
+        agy = 'agy-reload'
+    }
+    foreach ($name in $agentReloadAliases.Keys) {
+        if (Get-Command $agentReloadAliases[$name] -ErrorAction SilentlyContinue) {
+            Set-Alias $name $agentReloadAliases[$name] -Scope Global -Force
+        }
+    }
+
+    $commandAliases = @{
+        cco = 'Start-ClaudeIde'
+        ccr = 'Resume-ClaudeIde'
+        cdx = 'Start-Codex'
+        cdr = 'Resume-Codex'
+        agr = 'Resume-Antigravity'
+        opc = 'opencode'
+        opr = 'Resume-OpenCode'
+        czm = 'chezmoi'
+        cze = 'Edit-Dotfiles'
+        cza = 'Apply-Dotfiles'
+        czs = 'Get-DotfilesStatus'
+        czd = 'Compare-Dotfiles'
+        czu = 'Update-Dotfiles'
+        czcd = 'Set-DotfilesSourceLocation'
+        czcheck = 'Test-DotfilesMachine'
+    }
+    foreach ($name in $commandAliases.Keys) {
+        if (Get-Command $commandAliases[$name] -ErrorAction SilentlyContinue) {
+            Set-Alias $name $commandAliases[$name] -Scope Global -Force
+        }
+    }
+
+    if (Get-Command work -ErrorAction SilentlyContinue) {
+        $workAliases = @{
+            wcco = 'Start-WorkClaudeIde'
+            wccr = 'Resume-WorkClaudeIde'
+            wcdx = 'Start-WorkCodex'
+            wcdr = 'Resume-WorkCodex'
+            wagy = 'Start-WorkAntigravity'
+            wagr = 'Resume-WorkAntigravity'
+            wopc = 'Start-WorkOpenCode'
+            wopr = 'Resume-WorkOpenCode'
+        }
+        foreach ($name in $workAliases.Keys) {
+            Set-Alias $name $workAliases[$name] -Scope Global -Force
+        }
+    }
+}
+
 if ($script:DotfilesIsWindows) {
     $windowsProfile = Join-Path $PSScriptRoot 'windows.ps1'
     if (Test-Path -LiteralPath $windowsProfile) { . $windowsProfile }
@@ -211,47 +381,55 @@ else {
 }
 
 $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
-if ($interactive -and -not $script:DotfilesAgentShell) {
-    $optionalModules = 'posh-git', 'npm-completion', 'yarn-completion', 'posh-dotnet', 'Terminal-Icons'
-    $availableModules = @(Get-Module -ListAvailable -Name ($optionalModules + 'PSReadLine') | Select-Object -ExpandProperty Name -Unique)
-    foreach ($module in $optionalModules) {
-        if ($availableModules -contains $module) {
+if ($interactive) {
+    if (-not $script:DotfilesAgentShell) {
+        $optionalModules = 'npm-completion', 'yarn-completion'
+        foreach ($module in $optionalModules) {
             Import-Module $module -ErrorAction SilentlyContinue
         }
-    }
 
-    if ($availableModules -contains 'PSReadLine') {
         Import-Module PSReadLine -ErrorAction SilentlyContinue
-        try {
-            Set-PSReadLineOption -PredictionSource HistoryAndPlugin -ErrorAction Stop
-            Set-PSReadLineOption -PredictionViewStyle InlineView -ErrorAction Stop
+        if (Get-Module PSReadLine) {
+            try {
+                Set-PSReadLineOption -PredictionSource HistoryAndPlugin -ErrorAction Stop
+                Set-PSReadLineOption -PredictionViewStyle InlineView -ErrorAction Stop
+            }
+            catch {}
         }
-        catch {}
-    }
 
-    if ($script:DotfilesIsWindows) {
-        $scoopCompletion = Join-Path $HOME 'scoop/apps/scoop-completion/current/scoop-completion.psd1'
-        if (Test-Path -LiteralPath $scoopCompletion) {
-            Import-Module $scoopCompletion -ErrorAction SilentlyContinue
-        }
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            Register-ArgumentCompleter -Native -CommandName winget -ScriptBlock {
+        if (Get-Command dotnet -ErrorAction SilentlyContinue) {
+            Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock {
                 param($wordToComplete, $commandAst, $cursorPosition)
-                [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [Text.Utf8Encoding]::new()
-                $word = $wordToComplete.Replace('"', '""')
-                $ast = $commandAst.ToString().Replace('"', '""')
-                winget complete --word="$word" --commandline "$ast" --position $cursorPosition |
-                    ForEach-Object { [Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+                dotnet complete --position $cursorPosition $commandAst.ToString() | ForEach-Object {
+                    [Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+                }
             }
         }
-    }
 
-    $theme = Join-Path $script:DotfilesConfigHome 'oh-my-posh/cli-theme.omp.json'
-    if ((Get-Command oh-my-posh -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $theme)) {
-        $previousOutputEncoding = [Console]::OutputEncoding
-        [Console]::OutputEncoding = [Text.Encoding]::UTF8
-        try { oh-my-posh init pwsh --config $theme | Invoke-Expression }
-        finally { [Console]::OutputEncoding = $previousOutputEncoding }
+        if ($script:DotfilesIsWindows) {
+            $scoopCompletion = Join-Path $HOME 'scoop/apps/scoop-completion/current/scoop-completion.psd1'
+            if (Test-Path -LiteralPath $scoopCompletion) {
+                Import-Module $scoopCompletion -ErrorAction SilentlyContinue
+            }
+            if (Get-Command winget -ErrorAction SilentlyContinue) {
+                Register-ArgumentCompleter -Native -CommandName winget -ScriptBlock {
+                    param($wordToComplete, $commandAst, $cursorPosition)
+                    [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [Text.Utf8Encoding]::new()
+                    $word = $wordToComplete.Replace('"', '""')
+                    $ast = $commandAst.ToString().Replace('"', '""')
+                    winget complete --word="$word" --commandline "$ast" --position $cursorPosition |
+                        ForEach-Object { [Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+                }
+            }
+        }
+
+        $theme = Join-Path $script:DotfilesConfigHome 'oh-my-posh/cli-theme.omp.json'
+        if ((Get-Command oh-my-posh -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $theme)) {
+            $previousOutputEncoding = [Console]::OutputEncoding
+            [Console]::OutputEncoding = [Text.Encoding]::UTF8
+            try { oh-my-posh init pwsh --config $theme | Invoke-Expression }
+            finally { [Console]::OutputEncoding = $previousOutputEncoding }
+        }
     }
 
     Set-Alias reload Reload-Dotfiles -Scope Global
@@ -283,13 +461,13 @@ if ($interactive -and -not $script:DotfilesAgentShell) {
         k = 'kubectl'
         lg = 'lazygit'
         ff = 'fastfetch'
-        opc = 'opencode'
     }
     foreach ($name in $aliases.Keys) {
         if (Get-Command $aliases[$name] -ErrorAction SilentlyContinue) {
             Set-Alias $name $aliases[$name] -Scope Global -Force
         }
     }
+    Initialize-DotfilesCommandAliases
     if (Get-Command fastfetch -ErrorAction SilentlyContinue) {
         Set-Alias nf fastfetch -Scope Global
         Set-Alias neofetch fastfetch -Scope Global
