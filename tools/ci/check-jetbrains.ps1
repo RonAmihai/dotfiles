@@ -50,8 +50,9 @@ if (`$args[1] -eq 'get') { exit 1 }
 exit 0
 "@
 
-$saved = @{ USERPROFILE = $env:USERPROFILE; LOCALAPPDATA = $env:LOCALAPPDATA; APPDATA = $env:APPDATA; PATH = $env:PATH; CI = $env:CI }
+$saved = @{ HOME = $env:HOME; USERPROFILE = $env:USERPROFILE; LOCALAPPDATA = $env:LOCALAPPDATA; APPDATA = $env:APPDATA; PATH = $env:PATH; CI = $env:CI }
 try {
+    $env:HOME = $fakeHome
     $env:USERPROFILE = $fakeHome
     $env:LOCALAPPDATA = Join-Path $fakeHome 'AppData\Local'
     $env:APPDATA = Join-Path $fakeHome 'AppData\Roaming'
