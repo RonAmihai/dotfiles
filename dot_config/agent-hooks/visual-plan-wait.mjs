@@ -54,11 +54,19 @@ server.on('error', (error) => {
 server.listen(port, '127.0.0.1', openPageOnce);
 
 function openPageOnce() {
-  const opener = { darwin: 'open', linux: 'xdg-open' }[process.platform];
   const page = plan.replace(/\.(md|ya?ml)$/, '.html');
+  const [opener, ...args] = {
+    darwin: ['open', page],
+    linux: ['xdg-open', page],
+    win32: ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:VISUAL_PLAN_HTML -ErrorAction Stop'],
+  }[process.platform] ?? [];
   if (relay.opened || !opener || !existsSync(page)) return;
-  spawnSync(opener, [page]);
-  writeFileSync(relayPath, JSON.stringify({ ...relay, opened: true }));
+  const result = spawnSync(opener, args, {
+    env: { ...process.env, VISUAL_PLAN_HTML: page },
+    timeout: 5_000,
+    windowsHide: true,
+  });
+  if (result.status === 0) writeFileSync(relayPath, JSON.stringify({ ...relay, opened: true }));
 }
 
 function deliver(text) {

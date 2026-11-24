@@ -73,7 +73,13 @@ if (run.status !== 0 || failed) {
   process.exit(hookMode ? 0 : 1);
 }
 
-if (delivery === 'stop') writeFileSync(`${base}.relay.json`, JSON.stringify({ port: relay.port, token: relay.token, opened: relay.opened, awaiting: true }));
+if (delivery === 'stop') writeFileSync(`${base}.relay.json`, JSON.stringify({
+  port: relay.port,
+  token: relay.token,
+  opened: relay.opened,
+  awaiting: true,
+  sessionId: process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID,
+}));
 const opener = { darwin: 'open', linux: 'xdg-open' }[process.platform];
 // With a waiter, the waiter opens the page when it listens, so Send works from the start.
 if (firstRender && opener && !relay) spawnSync(opener, [htmlPath]);

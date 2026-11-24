@@ -1,1 +1,11 @@
 # Rendered files that an open pull request changes on purpose on every system. Empty this list after its merge
+.codex/AGENTS.md
+.codex/agent-hooks/visual-plan-codex.mjs
+.codex/agent-hooks/visual-plan-pack.mjs
+.codex/agent-hooks/visual-plan-wait.mjs
+.codex/config.toml
+.codex/hooks.json
+.config/agent-hooks/visual-plan-codex.mjs
+.config/agent-hooks/visual-plan-pack.mjs
+.config/agent-hooks/visual-plan-wait.mjs
+.local/bin/agent-statusline

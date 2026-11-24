@@ -1,6 +1,9 @@
 {{- /* chezmoi:modify-template */ -}}
 {{- /* Sets the approval mode, then appends each shared MCP server that the file lacks; Codex owns the rest, and a removed server stays */ -}}
 {{- $config := .chezmoi.stdin -}}
+{{- if eq .chezmoi.os "windows" -}}
+{{-   $config = replace "\r\n" "\n" $config -}}
+{{- end -}}
 {{- /* A nono pack appends a marked block at the end, where its developer_instructions fall into the last table; move the whole block above the first table, and drop any unmarked copy of its tables, so that nono replaces all of it on its next update */ -}}
 {{- $nonoTop := "" -}}
 {{- $nonoBlock := regexFind `(?s)# >>> nono:[^\n]*>>>\n.*?# <<< nono:[^\n]*<<<\n?` $config -}}
@@ -73,5 +76,23 @@
 {{-     if $config }}{{ $config = printf "%s\n\n" $config }}{{ end -}}
 {{-     $config = printf "%s[mcp_servers.%s]\nurl = %q\n" $config $name $url -}}
 {{-   end -}}
+{{- end -}}
+{{- if eq .chezmoi.os "windows" -}}
+{{-   $tui := dig "tui" (dict) ($config | fromToml) -}}
+{{-   if not (hasKey $tui "keymap") -}}
+{{-     $newline := `insert_newline = ["ctrl-j", "ctrl-m", "enter", "shift-enter", "alt-enter", "ctrl-enter"]` -}}
+{{-     $config = printf "%s\n\n[tui.keymap.editor]\n%s\n" (trimSuffix "\n" $config) $newline -}}
+{{-   end -}}
+{{-   $hook := "simple-english@simple-english:.codex-plugin/hooks.json:session_start:0:0" -}}
+{{-   $hookPattern := regexQuoteMeta $hook -}}
+{{-   $section := regexFind (printf `(?m)^[ \t]*\[hooks\.state\.(?:"%s"|'%s')\][ \t]*(?:#[^\n]*)?$(?:\n[ \t]*(?:[^\[ \t\n][^\n]*)?$)*` $hookPattern $hookPattern) $config | trimSuffix "\n" -}}
+{{-   if not $section -}}
+{{-     $config = printf "%s\n\n[hooks.state.%q]\nenabled = false\n" (trim $config) $hook -}}
+{{-   else if regexMatch `(?m)^[ \t]*enabled[ \t]*=` $section -}}
+{{-     $config = replace $section (regexReplaceAll `(?m)^[ \t]*enabled[ \t]*=.*$` $section "enabled = false") $config -}}
+{{-   else -}}
+{{-     $config = replace $section (printf "%s\nenabled = false" $section) $config -}}
+{{-   end -}}
+{{-   $config = printf "%s\n" (regexReplaceAll "\n+$" $config "") -}}
 {{- end -}}
 {{- $config -}}

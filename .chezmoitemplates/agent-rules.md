@@ -24,7 +24,11 @@ gives a job to something else, it says so.
 
 ## Reply format: write in plain English, then arrange
 
-{{ if eq .agent "codex" -}}
+{{ if and (eq .agent "codex") (eq .chezmoi.os "windows") -}}
+Use the installed Simple English skill for technical writing. Read its rules before
+you write the first such text. Write every reply so that a smart reader outside the
+field understands it on one read:
+{{- else if eq .agent "codex" -}}
 Follow the Simple English rules that the simple-english plugin loads at session start.
 If the plugin did not load them, write every reply so that a smart reader outside the
 field understands it on one read:
@@ -266,7 +270,7 @@ plan after the lock.
   apply.
 
 Outside plan mode, pack the page with this command, never with `pack.mjs`:
-`node ~/.config/agent-hooks/visual-plan-pack.mjs <path of plan.yaml>`. It also checks the
+`node {{ if and (eq .agent "codex") (eq .chezmoi.os "windows") }}"{{ joinPath .chezmoi.destDir ".codex" "agent-hooks" "visual-plan-pack.mjs" | replace "\\" "/" }}"{{ else }}~/.config/agent-hooks/visual-plan-pack.mjs{{ end }} <path of plan.yaml>`. It also checks the
 word limit and adds the Send button. Fix what it reports, and pack again. When it says
 that no response waiter runs, start the command that it gives, as it says. Start it in
 this session, not in a subagent. Then end your turn, and wait for my response.

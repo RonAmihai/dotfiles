@@ -1,12 +1,16 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const waiterScript = join(dirname(new URL(import.meta.url).pathname), 'visual-plan-wait.mjs');
+const waiterScript = fileURLToPath(new URL('./visual-plan-wait.mjs', import.meta.url));
 const input = readFileSync(0, 'utf8');
 let cwd = process.cwd();
+let sessionId;
 try {
-  cwd = JSON.parse(input).cwd ?? cwd;
+  const hook = JSON.parse(input);
+  cwd = hook.cwd ?? cwd;
+  sessionId = hook.session_id;
 } catch {}
 if (process.argv[2] === 'stop') waitAtTurnEnd();
 else startPasteWaiter();
@@ -31,9 +35,8 @@ function waitAtTurnEnd() {
   const run = spawnSync(process.execPath, [waiterScript, relayPath.replace(/\.relay\.json$/, '.yaml')], { encoding: 'utf8', env });
   const relay = JSON.parse(readFileSync(relayPath, 'utf8'));
   writeFileSync(relayPath, JSON.stringify({ ...relay, awaiting: false }));
-  if (!run.stdout.includes('My response from the visual plan page')) return;
-  process.stderr.write(run.stdout);
-  process.exit(2);
+  if (run.status !== 0 || !run.stdout?.startsWith('My response from the visual plan page:')) return;
+  console.log(JSON.stringify({ decision: 'block', reason: run.stdout.trimEnd() }));
 }
 
 function awaitingRelay(dir, depth) {
@@ -57,7 +60,8 @@ function awaitingRelay(dir, depth) {
 
 function isAwaiting(path) {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')).awaiting === true;
+    const relay = JSON.parse(readFileSync(path, 'utf8'));
+    return relay.awaiting === true && (process.platform !== 'win32' || (sessionId && relay.sessionId === sessionId));
   } catch {
     return false;
   }

@@ -92,10 +92,11 @@ sbx-kits
 .jetbrains/acp.json
 {{ end }}
 
-# The consent hook is a shell script, and Codex and agy on Windows have no shell to run it
+# The Gemini consent hook is a shell script
 {{ if eq .chezmoi.os "windows" }}
-.codex/hooks.json
 .gemini/config/hooks.json
+{{ else }}
+.codex/agent-hooks
 {{ end }}
 
 # The work command is a bash script for macOS, Linux and Termux
