@@ -6,7 +6,7 @@
 {{- end -}}
 {{- $command := printf "%s --agy" (joinPath .chezmoi.homeDir ".local/bin/agent-statusline") -}}
 {{- /* Windows cannot run a script by its shebang line */ -}}
-{{- if eq .chezmoi.os "windows" }}{{ $command = printf "python %q --agy" (joinPath .chezmoi.homeDir ".local/bin/agent-statusline") }}{{ end -}}
+{{- if eq .chezmoi.os "windows" }}{{ $command = printf "python %s --agy" (joinPath .chezmoi.homeDir ".local/bin/agent-statusline") }}{{ end -}}
 {{- $_ := set $settings "statusLine" (dict "type" "command" "command" $command) -}}
 {{- $_ := set $settings "altScreenMode" "always" -}}
 {{- /* Commands run in the agy sandbox without a prompt and risky ones still ask, like Claude Code auto mode; a mode that agy saved stays */ -}}
